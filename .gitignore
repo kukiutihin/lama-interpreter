@@ -3,6 +3,9 @@
 !*.*
 !*/
 
+!Makefile
+/Lama
+
 *.out 
 *.so
 *.o 
