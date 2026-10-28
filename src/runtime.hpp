@@ -1,9 +1,12 @@
+#pragma once
+
 #include <cstddef>
 
 extern "C" {
 #include "gc.h"
+#include "runtime_common.h"
 
-int Lbinoperror(void);
+extern void* Bstring(aint* args);
 }
 
 class Runtime {
@@ -16,7 +19,8 @@ class Runtime {
   Runtime() { __init(); }
   ~Runtime() { __shutdown(); }
 
-  void* allocate(std::size_t size) { return alloc(size); }
-
-  void error() { Lbinoperror(); }
+  template <typename T>
+  T* allocate(std::size_t n) {
+    return reinterpret_cast<T*>(alloc(n * sizeof(T)));
+  }
 };

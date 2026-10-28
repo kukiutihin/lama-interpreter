@@ -2,13 +2,15 @@
 #include <print>
 
 #include "runtime.hpp"
+#include "tokens.hpp"
+#include "virtual-machine.hpp"
 
 int main() {
   Runtime runtime;
-  char* str = reinterpret_cast<char*>(runtime.allocate(3));
-  std::string_view msg = "Hello Skib and Keks!";
-  std::memcpy(str, msg.data(), msg.length());
-  std::println("{}", str);
+  const char* constPool[] = {"moskib", "keks", "skib", "penguinbox"};
+  VirtualMachine vm(runtime, constPool);
 
-  runtime.error();
+  static uint8_t ir[] = {OP_STRING, 2, 0, 0, 0, OP_END};
+  auto res = vm.interpret(ir);
+  std::println("{}", reinterpret_cast<char*>(res));
 }
