@@ -27,5 +27,5 @@ $(BIN)-debug: $(SRC)/main.cpp $(SRC)/virtual-machine.cpp runtime-debug.o gc-debu
 	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) -g
 
 clean:
-	@rm -f *.out *.o
-	@rm -f $(BIN) $(BIN)-debug
+	@rm -rf *.out *.o *.dSYM
+	@rm -f $(BIN) $(BIN)-debug 

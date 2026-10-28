@@ -4,11 +4,11 @@
 
 class VirtualMachine {
   const char** constantPool;
-  Runtime& runtime;
+  GC& gc;
 
  public:
-  VirtualMachine(Runtime& runtime, const char** pool)
-      : runtime(runtime), constantPool(pool) {}
+  VirtualMachine(GC& gc, const char** pool)
+      : gc(gc), constantPool(pool) {}
 
   ptrt interpret(uint8_t*);
 };

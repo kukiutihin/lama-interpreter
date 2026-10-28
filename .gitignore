@@ -9,5 +9,6 @@
 *.out 
 *.so
 *.o 
+*.dSYM
 
 .DS_Store

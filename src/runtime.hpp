@@ -7,17 +7,19 @@ extern "C" {
 #include "runtime_common.h"
 
 extern void* Bstring(aint* args);
+extern size_t __gc_stack_top;
+extern size_t __gc_stack_bottom;
 }
 
-class Runtime {
+class GC {
  public:
-  Runtime(const Runtime&) = delete;
-  Runtime& operator=(const Runtime&) = delete;
-  Runtime&& operator=(Runtime&&) = delete;
-  Runtime(Runtime&&) = delete;
+  GC(const GC&) = delete;
+  GC& operator=(const GC&) = delete;
+  GC&& operator=(GC&&) = delete;
+  GC(GC&&) = delete;
 
-  Runtime() { __init(); }
-  ~Runtime() { __shutdown(); }
+  GC() { __init(); }
+  ~GC() { __shutdown(); }
 
   template <typename T>
   T* allocate(std::size_t n) {
