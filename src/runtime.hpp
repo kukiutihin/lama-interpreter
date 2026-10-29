@@ -7,6 +7,12 @@ extern "C" {
 #include "runtime_common.h"
 
 extern void* Bstring(aint* args);
+extern void* Bsexp(aint* args, aint n);
+extern void* Bsta(void* x, aint i, void* v);
+extern void* Barray(aint* args, aint bn);
+extern void* Belem(void* p, aint i);
+extern aint LtagHash(const char* s);
+
 extern size_t __gc_stack_top;
 extern size_t __gc_stack_bottom;
 }

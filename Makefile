@@ -1,6 +1,6 @@
 CXX = clang++
 CC = clang
-FLAGS = -std=gnu++23 -O2
+FLAGS = -std=gnu++23 -O3
 
 BIN = app
 RUNTIME_DIR = Lama/runtime
