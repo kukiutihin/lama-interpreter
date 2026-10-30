@@ -4,47 +4,52 @@
 #include "runtime.hpp"
 
 static constexpr size_t ELEMSIZE = sizeof(ptrt);
-static constexpr size_t STACKSIZE = 1024 * 8;
-
-using std::size_t;
+static constexpr size_t STACKSIZE = 1024 * ELEMSIZE;
 
 class Stack {
-  ptrt* stack;
-  size_t current;
-  size_t& fp;
-  size_t& sp;
+  ptrt stack[STACKSIZE];
 
  public:
-  Stack(size_t& fp, size_t& sp) : fp(fp), sp(sp), current(0) {
-    stack = new ptrt[STACKSIZE];
-    fp = (size_t)stack;
-    sp = fp;
+  Stack() {
+    __gc_stack_top = reinterpret_cast<std::size_t>(&stack[0]);
+    __gc_stack_bottom = __gc_stack_top;
   }
 
   [[gnu::always_inline]] ptrt pop() {
-    sp += ELEMSIZE;
-    return stack[--current];
+    __gc_stack_bottom -= ELEMSIZE;
+    return *reinterpret_cast<ptrt*>(__gc_stack_bottom);
   }
 
-  [[gnu::always_inline]] ptrt top() { return stack[current - 1]; }
+  [[gnu::always_inline]] ptrt top() {
+    return *reinterpret_cast<ptrt*>(__gc_stack_bottom - ELEMSIZE);
+  }
 
   [[gnu::always_inline]] void swap() {
-    std::swap(stack[current - 1], stack[current - 1]);
+    std::swap(*reinterpret_cast<ptrt*>(__gc_stack_bottom - ELEMSIZE),
+              *reinterpret_cast<ptrt*>(__gc_stack_bottom - (ELEMSIZE * 2)));
   }
 
   [[gnu::always_inline]] void popN(std::size_t n) {
-    for (std::size_t i = 0; i < n; i++) {
-      sp += ELEMSIZE;
-      current--;
-    }
+    __gc_stack_bottom -= (ELEMSIZE * n);
   }
 
   [[gnu::always_inline]] void push(ptrt value) {
-    sp -= ELEMSIZE;
-    stack[current++] = value;
+    *reinterpret_cast<ptrt*>(__gc_stack_bottom) = value;
+    __gc_stack_bottom += ELEMSIZE;
   }
 
-  [[gnu::always_inline]] ptrt* getAddr(std::size_t offsetFromCurrent) {
-    return &stack[current - offsetFromCurrent];
+  // Returns pointer to an element by given offset (in elements)
+  // from current top (sp).
+  // Moves down the stack
+  [[gnu::always_inline]] ptrt* getAddrFromSP(std::size_t elOffset) {
+    return reinterpret_cast<ptrt*>(__gc_stack_bottom - ELEMSIZE -
+                                   (ELEMSIZE * elOffset));
+  }
+
+  // Returns pointer to an element by given offset (in elements)
+  // from base (sp).
+  // Moves up the stack
+  [[gnu::always_inline]] ptrt* getAddrFromBase(size_t elOffset) {
+    return reinterpret_cast<ptrt*>(__gc_stack_top + (ELEMSIZE * elOffset));
   }
 };
