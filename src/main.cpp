@@ -1,18 +1,20 @@
-#include <cstdint>
+#include <cstddef>
 #include <cstring>
+#include <fstream>
 
-#include "runtime.hpp"
-#include "tokens.hpp"
-#include "virtual-machine.hpp"
+#include "bytecode-reader.h"
+#include "virtual-machine.h"
 
-int main() {
+int main(int argc, char* argv[]) {
+  if (argc != 2) failure("expected usage: app <path_to_bytecode>\n");
+
+  std::ifstream bytecodeFile(argv[1], std::ios::binary);
+  if (!bytecodeFile) failure("failed to open bytecode file: %s\n", argv[1]);
+
+  BytecodeReader reader;
+  auto bytecode = reader.readFromFile(bytecodeFile);
+
   GC gc;
-  std::uint8_t constPool[] = {'s', 'k', 'i', 'b', '\0',
-                              'K', 'e', 'k', 's', '\0',
-                              'w', 'r', 'i', 't', 'e', '\0',
-                             };
-
-  VirtualMachine vm(gc, constPool, 1);
-
-  vm.interpret(clo_in_func);
+  VirtualMachine vm(bytecode.constantPool, bytecode.header.globalsCount, gc);
+  vm.interpret(bytecode.code);
 }

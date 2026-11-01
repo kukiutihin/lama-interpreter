@@ -1,15 +1,14 @@
-#include "virtual-machine.hpp"
+#include "virtual-machine.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
 
-#include "runtime.h"
-#include "runtime.hpp"
+#include "app-runtime.h"
 #include "runtime_common.h"
-#include "stack.hpp"
-#include "tokens.hpp"
+#include "stack.h"
+#include "tokens.h"
 
 #define ASSIGN(op, label) handlers[(op)] = &&label;
 #define NEXT goto* handlers[*ip++];

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <utility>
 
-#include "runtime.hpp"
+#include "app-runtime.h"
 
 static constexpr size_t ELEMSIZE = sizeof(ptrt);
 static constexpr size_t STACKSIZE = 1024 * ELEMSIZE;

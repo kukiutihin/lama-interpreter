@@ -3,17 +3,16 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "runtime.hpp"
-#include "stack.hpp"
+#include "app-runtime.h"
+#include "stack.h"
 
 class VirtualMachine {
   std::uint8_t* constantPool;
-  GC& gc;
   std::size_t globalsCount;
 
  public:
-  VirtualMachine(GC& gc, std::uint8_t* pool, std::size_t globalsCount)
-      : gc(gc), constantPool(pool), globalsCount(globalsCount) {}
+  VirtualMachine(std::uint8_t* pool, std::size_t globalsCount, const GC& gc)
+      : constantPool(pool), globalsCount(globalsCount) {}
 
   void interpret(uint8_t*);
 

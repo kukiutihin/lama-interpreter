@@ -8,23 +8,43 @@ SRC = src
 
 all: $(BIN)
 
-runtime.o: $(RUNTIME_DIR)/runtime.c
-	$(CC) $^ -c -o $@ -Wno-shift-negative-value
 
 gc.o: $(RUNTIME_DIR)/gc.c
+	$(CC) $^ -c -o $@ -Wno-shift-negative-value
+
+gc-debug.o: $(RUNTIME_DIR)/gc.c
+	$(CC) $^ -c -o $@ -Wno-shift-negative-value -g
+
+
+runtime.o: $(RUNTIME_DIR)/runtime.c
 	$(CC) $^ -c -o $@ -Wno-shift-negative-value
 
 runtime-debug.o: $(RUNTIME_DIR)/runtime.c
 	$(CC) $^ -c -o $@ -Wno-shift-negative-value -g
 
-gc-debug.o: $(RUNTIME_DIR)/gc.c
-	$(CC) $^ -c -o $@ -Wno-shift-negative-value -g
 
-$(BIN): $(SRC)/main.cpp $(SRC)/virtual-machine.cpp runtime.o gc.o
+virtual-machine.o: $(SRC)/virtual-machine.cpp
+	$(CXX) $(FLAGS) $^ -c -o $@ -I $(RUNTIME_DIR) 
+
+virtual-machine-debug.o: $(SRC)/virtual-machine.cpp
+	$(CXX) $(FLAGS) $^ -c -o $@ -g -I $(RUNTIME_DIR) 
+
+
+bytecode-reader.o: $(SRC)/bytecode-reader.cpp
+	$(CXX) $(FLAGS) $^ -c -o $@ -I $(RUNTIME_DIR) 
+
+bytecode-reader-debug.o: $(SRC)/bytecode-reader.cpp
+	$(CXX) $(FLAGS) $^ -c -o $@ -g -I $(RUNTIME_DIR) 
+
+
+$(BIN): $(SRC)/main.cpp \
+virtual-machine.o bytecode-reader.o runtime.o gc.o	
 	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) 
 
-$(BIN)-debug: $(SRC)/main.cpp $(SRC)/virtual-machine.cpp runtime-debug.o gc-debug.o
+$(BIN)-debug: $(SRC)/main.cpp \
+bytecode-reader-debug.o virtual-machine-debug.o runtime-debug.o gc-debug.o
 	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) -g -O0
+
 
 clean:
 	@rm -rf *.out *.o *.dSYM
