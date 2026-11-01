@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstddef>
 #include <utility>
 
@@ -33,23 +35,21 @@ class Stack {
     __gc_stack_bottom -= (ELEMSIZE * n);
   }
 
+  [[gnu::always_inline]] void jumpTo(std::size_t offsetEl) {
+    __gc_stack_bottom = __gc_stack_top + (offsetEl * ELEMSIZE);
+  }
+
   [[gnu::always_inline]] void push(ptrt value) {
     *reinterpret_cast<ptrt*>(__gc_stack_bottom) = value;
     __gc_stack_bottom += ELEMSIZE;
   }
 
-  // Returns pointer to an element by given offset (in elements)
-  // from current top (sp).
-  // Moves down the stack
-  [[gnu::always_inline]] ptrt* getAddrFromSP(std::size_t elOffset) {
-    return reinterpret_cast<ptrt*>(__gc_stack_bottom - ELEMSIZE -
-                                   (ELEMSIZE * elOffset));
+  [[gnu::always_inline]] std::size_t offset() {
+    return ((__gc_stack_bottom - __gc_stack_top) / ELEMSIZE);
   }
 
   // Returns pointer to an element by given offset (in elements)
-  // from base (sp).
-  // Moves up the stack
-  [[gnu::always_inline]] ptrt* getAddrFromBase(size_t elOffset) {
-    return reinterpret_cast<ptrt*>(__gc_stack_top + (ELEMSIZE * elOffset));
+  [[gnu::always_inline]] ptrt* byOffset(std::size_t offset) {
+    return reinterpret_cast<ptrt*>((__gc_stack_top + (ELEMSIZE * offset)));
   }
 };

@@ -1,6 +1,6 @@
 CXX = clang++
 CC = clang
-FLAGS = -std=gnu++23 -O3
+FLAGS = -std=gnu++23 -O3 -Wno-writable-strings
 
 BIN = app
 RUNTIME_DIR = Lama/runtime
@@ -24,7 +24,7 @@ $(BIN): $(SRC)/main.cpp $(SRC)/virtual-machine.cpp runtime.o gc.o
 	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) 
 
 $(BIN)-debug: $(SRC)/main.cpp $(SRC)/virtual-machine.cpp runtime-debug.o gc-debug.o
-	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) -g
+	$(CXX) $(FLAGS) $^ -o $@ -I $(RUNTIME_DIR) -g -O0
 
 clean:
 	@rm -rf *.out *.o *.dSYM
