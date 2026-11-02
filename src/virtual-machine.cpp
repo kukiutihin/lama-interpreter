@@ -10,6 +10,20 @@
 #include "stack.h"
 #include "tokens.h"
 
+Stack VirtualMachine::allocateStack() {
+  Stack stack;
+
+  // reserves space for globals in stack
+  for (std::size_t i = 0; i < globalsCount; i++) stack.push(BOX(0));
+
+  // nobody saves ip for main function (call is not called)
+  // we will save it here manually so that main can return control to EOF
+  stack.push(BOX(0)); // sp
+  stack.push(BOX(reinterpret_cast<ptrt>(eof))); // ip
+
+  return stack;
+}
+
 #define ASSIGN(op, label) handlers[(op)] = &&label;
 #define NEXT goto* handlers[*ip++];
 
@@ -22,7 +36,7 @@
   }
 
 void VirtualMachine::interpret(uint8_t* ipBase) {
-  static void* handlers[52];
+  static void* handlers[256];
 
   ASSIGN(OP_BINOP_ADD, _add);
   ASSIGN(OP_BINOP_SUB, _sub);
@@ -72,6 +86,8 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
 
   ASSIGN(OP_FAIL, _fail);
   ASSIGN(OP_FAIL_KEEP, _fail_keep);
+
+  ASSIGN(OP_LINE, _line);
 
   ASSIGN(OP_PATT_STR_CMP, _patt_str_cmp);
   ASSIGN(OP_PATT_STRING, _patt_string);
@@ -291,10 +307,10 @@ _cjmp_nz:
 _call:
   {
     auto offset = readI32();
+    auto argsCount = readI32();
 
     // positive offset points to BEGIN in bytecode
     if (offset >= 0) {
-      auto argsCount = readI32();
       stack.push(BOX(stack.offset() - argsCount));  // saving sp
       stack.push(BOX(reinterpret_cast<ptrt>(ip)));  // saving ip
       ip = ipBase + offset;
@@ -467,6 +483,10 @@ _fail_keep:
     failure("Match error at %d:%d\n", line, col);
     NEXT;
   }
+
+_line:
+  readI32();
+  NEXT;
 
 _patt_str_cmp:
   stack.push(Bstring_patt(reinterpret_cast<void*>(stack.pop()),

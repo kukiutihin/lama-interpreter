@@ -9,7 +9,7 @@ enum Token : uint8_t {
 
   // binary operations
   // (..., x, y -> ..., x <op> y)
-  OP_BINOP_ADD = 1,
+  OP_BINOP_ADD = 0x01,
   OP_BINOP_SUB,
   OP_BINOP_MUL,
   OP_BINOP_DIV,
@@ -26,7 +26,7 @@ enum Token : uint8_t {
   // places const on stack
   // (... -> ..., const)
   // [4B const]
-  OP_CONST,
+  OP_CONST = 0x10,
 
   // places string from costant pool on stack
   // (... -> ..., ptr to string)
@@ -42,7 +42,7 @@ enum Token : uint8_t {
 
   // places value to an aggregate (array, string, sexp) at given index
   // (..., aggregate, index, value  -> ..., value)
-  OP_STA,
+  OP_STA = 0x14,
 
   // unconditional jump to given byte offset
   // (... -> ...)
@@ -52,7 +52,7 @@ enum Token : uint8_t {
   OP_END,
 
   // (..., el  -> ...)
-  OP_DROP,
+  OP_DROP = 0x18,
 
   // (..., el  -> ..., el, el)
   OP_DUP,
@@ -72,7 +72,7 @@ enum Token : uint8_t {
   // loads value from ... to stack
   // (... -> ..., value)
   // [4B index]
-  OP_LD_GLO,
+  OP_LD_GLO = 0x20,
   OP_LD_LOC,
   OP_LD_ARG,
   OP_LD_CLO,
@@ -80,7 +80,7 @@ enum Token : uint8_t {
   // stores value from stack top to ...
   // (..., value -> ..., value)
   // [4B index]
-  OP_ST_GLO,
+  OP_ST_GLO = 0x40,
   OP_ST_LOC,
   OP_ST_ARG,
   OP_ST_CLO,
@@ -88,8 +88,8 @@ enum Token : uint8_t {
   // conditional jumps to given byte offset
   // (..., value -> ...)
   // [4B offset]
-  OP_CJMP_Z,   // if value == 0
-  OP_CJMP_NZ,  // if value != 0
+  OP_CJMP_Z = 0x50,  // if value == 0
+  OP_CJMP_NZ,        // if value != 0
 
   // OP_BEGIN[_CLOSURE] is function prologue section
   // saves fp onto the stack
@@ -99,7 +99,7 @@ enum Token : uint8_t {
   // ..., arg_1, .., arg_n, sp, ip, fp, local_1, .., local_m)
   //
   // [4B args count][4B locals count]
-  OP_BEGIN,
+  OP_BEGIN = 0x52,
 
   // (..., arg_1, .., arg_n, closure, sp, ip ->
   // ..., arg_1, .., arg_n, closure, sp, ip, fp, local_1, .., local_m)
@@ -145,9 +145,11 @@ enum Token : uint8_t {
   // (..., top -> .... top)
   OP_FAIL_KEEP,
 
+  OP_LINE = 0x5B,
+
   // checks that two top values on stack are strings and they are equal
   // (..., strA, strB -> ..., result)
-  OP_PATT_STR_CMP,
+  OP_PATT_STR_CMP = 0x60,
 
   // OP_PATT_* checks that the value is *
   // (..., value -> ..., result)
@@ -161,7 +163,7 @@ enum Token : uint8_t {
   // takes n elements from stack and store pointer to an array
   // (..., el_1, ..., el_n  -> ..., ptr to array)
   // [4B elements count]
-  OP_BARRAY,
+  OP_BARRAY = 0x74,
 
-  OP_EOF,
+  OP_EOF = 0xFF,
 };

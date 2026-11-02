@@ -5,6 +5,7 @@
 
 !Makefile
 /Lama
+/test
 
 *.out 
 *.so

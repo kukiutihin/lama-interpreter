@@ -1,9 +1,13 @@
 #pragma once
 
+#include <fcntl.h>
+#include <sys/mman.h>
+
 #include <cstdint>
 #include <fstream>
 
-#pragma pack(push, 1)
+#include "app-runtime.h"
+
 struct BytecodeHeader {
   std::uint32_t magic;
   std::int32_t version;
@@ -12,23 +16,27 @@ struct BytecodeHeader {
   std::int32_t importsCount;
   std::int32_t publicSymbolsCount;
 };
-#pragma pack(pop)
-
-struct PublicSymbol {
-  std::int32_t nameOffset;
-  std::int32_t codeOffset;
-  std::uint8_t flag;
-};
 
 struct Bytecode {
   BytecodeHeader header;
   std::uint8_t* constantPool;
-  std::int32_t* imports;
-  PublicSymbol* symbols;
   std::uint8_t* code;
 };
 
 class BytecodeReader {
+  int fd;
+  void* data = nullptr;
+  std::size_t dataSize;
+
  public:
-  Bytecode readFromFile(std::ifstream& file);
+  BytecodeReader(const char* path) {
+    fd = open(path, O_RDONLY);
+    if (fd < 0) failure("failed to open %s: %s\n", path, std::strerror(errno));
+  }
+
+  ~BytecodeReader() {
+    if (data) munmap(data, dataSize);
+  }
+
+  Bytecode readBytecode();
 };

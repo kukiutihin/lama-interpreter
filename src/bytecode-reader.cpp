@@ -1,21 +1,63 @@
 #include "bytecode-reader.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
-#include <fstream>
 
 #include "app-runtime.h"
+#include "memory.h"
 
-static const char* MAGIC = "LaMa";
-static const std::size_t MAGIC_SIZE = 4;
+static const std::uint32_t MAGIC = 0x614D614C;  // LaMa
+static const std::int32_t VERSION = 1;
 
-Bytecode BytecodeReader::readFromFile(std::ifstream& file) {
+Bytecode BytecodeReader::readBytecode() {
+  struct stat st;
+  if (fstat(fd, &st) < 0)
+    failure("failed to read from file: (fstat) %s\n", std::strerror(errno));
+
+  // remember data ptr in class to call munmap in destructor
+  data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (data == MAP_FAILED)
+    failure("failed to read from file: (mmap) %s\n", std::strerror(errno));
+  dataSize = st.st_size;
+
+  if (st.st_size < sizeof(BytecodeHeader))
+    failure("corrupted bytecode: file smaller than required header\n");
+
   BytecodeHeader header;
-  file.read(reinterpret_cast<char*>(&header), sizeof(BytecodeHeader));
+  memcpy(&header, data, sizeof(BytecodeHeader));
 
-  if (!memcmp(reinterpret_cast<const void*>(header.magic),
-              reinterpret_cast<const void*>(MAGIC), MAGIC_SIZE))
+  if (header.magic != MAGIC)
     failure("unknown magic: %s , 'LaMa' expected\n",
             reinterpret_cast<char*>(header.magic));
 
-  return Bytecode{header};
+  if (header.version != VERSION)
+    failure("unknown bytecode version: %d , version 1 expected\n",
+            header.version);
+
+  std::size_t minSize = sizeof(BytecodeHeader) + header.constPoolSize +
+                        (header.importsCount * 4) +
+                        (header.publicSymbolsCount * 9) + 1;  // OP_EOF
+
+  if (dataSize < minSize) {
+    failure("corrupted bytecode: file truncated\n");
+  }
+
+  auto bytes = reinterpret_cast<std::uint8_t*>(data);
+  bytes += sizeof(BytecodeHeader);
+  std::uint8_t* constPool = bytes;
+  bytes += header.constPoolSize;
+
+  // skip imports
+  bytes += header.importsCount * 4;
+
+  // skip publicSymbols
+  bytes += header.publicSymbolsCount * 9;
+
+  return Bytecode{header, constPool, bytes};
 }
