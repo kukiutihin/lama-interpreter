@@ -18,8 +18,8 @@ Stack VirtualMachine::allocateStack() {
 
   // nobody saves ip for main function (call is not called)
   // we will save it here manually so that main can return control to EOF
-  stack.push(BOX(0)); // sp
-  stack.push(BOX(reinterpret_cast<ptrt>(eof))); // ip
+  stack.push(BOX(0));                            // sp
+  stack.push(BOX(reinterpret_cast<ptrt>(eof)));  // ip
 
   return stack;
 }
@@ -165,39 +165,36 @@ _const:
   stack.push(BOX(readI32()));
   NEXT;
 
-_string:
-  {
-    auto rawString = &pool[readI32()];
-    auto ptr = Bstring(reinterpret_cast<aint*>(&rawString));
-    stack.push(reinterpret_cast<ptrt>(ptr));
-    NEXT;
-  }
+_string: {
+  auto rawString = &pool[readI32()];
+  auto ptr = Bstring(reinterpret_cast<aint*>(&rawString));
+  stack.push(reinterpret_cast<ptrt>(ptr));
+  NEXT;
+}
 
-_sexp:
-  {
-    auto tag = reinterpret_cast<const char*>(&pool[readI32()]);
-    stack.push(LtagHash(tag));
+_sexp: {
+  auto tag = reinterpret_cast<const char*>(&pool[readI32()]);
+  stack.push(LtagHash(tag));
 
-    auto n = readI32();
-    auto ptr =
-        Bsexp(reinterpret_cast<aint*>(stack.byOffset(stack.offset() - (n + 1))),
-              BOX(n + 1));
+  auto n = readI32();
+  auto ptr =
+      Bsexp(reinterpret_cast<aint*>(stack.byOffset(stack.offset() - (n + 1))),
+            BOX(n + 1));
 
-    stack.popN(n + 1);
-    stack.push(reinterpret_cast<ptrt>(ptr));
-    NEXT;
-  }
+  stack.popN(n + 1);
+  stack.push(reinterpret_cast<ptrt>(ptr));
+  NEXT;
+}
 
-_sta:
-  {
-    auto value = stack.pop();
-    auto index = stack.pop();
-    auto aggregate = stack.pop();
-    auto updated = Bsta(reinterpret_cast<void*>(aggregate), index,
-                        reinterpret_cast<void*>(value));
-    stack.push(reinterpret_cast<ptrt>(updated));
-    NEXT;
-  }
+_sta: {
+  auto value = stack.pop();
+  auto index = stack.pop();
+  auto aggregate = stack.pop();
+  auto updated = Bsta(reinterpret_cast<void*>(aggregate), index,
+                      reinterpret_cast<void*>(value));
+  stack.push(reinterpret_cast<ptrt>(updated));
+  NEXT;
+}
 
 _drop:
   stack.pop();
@@ -211,278 +208,271 @@ _swap:
   stack.swap();
   NEXT;
 
-_elem:
-  {
-    auto index = stack.pop();
-    auto aggregate = stack.pop();
-    auto value = Belem(reinterpret_cast<void*>(aggregate), index);
-    stack.push(reinterpret_cast<ptrt>(value));
-    NEXT;
-  }
+_elem: {
+  auto index = stack.pop();
+  auto aggregate = stack.pop();
+  auto value = Belem(reinterpret_cast<void*>(aggregate), index);
+  stack.push(reinterpret_cast<ptrt>(value));
+  NEXT;
+}
 
-_ld_glo:
-  {
-    auto index = readI32();
-    stack.push(*stack.byOffset(index));
-    NEXT;
-  }
+_ld_glo: {
+  auto index = readI32();
+  stack.push(*stack.byOffset(index));
+  NEXT;
+}
 
-_ld_loc:
-  {
-    auto index = readI32();
-    stack.push(*stack.byOffset(fp + index));
-    NEXT;
-  }
+_ld_loc: {
+  auto index = readI32();
+  stack.push(*stack.byOffset(fp + index));
+  NEXT;
+}
 
-_ld_arg:
-  {
-    auto index = readI32();
-    auto savedSP = UNBOX(*stack.byOffset(fp - 3));
-    stack.push(*(stack.byOffset(savedSP + index)));
-    NEXT;
-  }
+_ld_arg: {
+  auto index = readI32();
+  auto savedSP = UNBOX(*stack.byOffset(fp - 3));
+  stack.push(*(stack.byOffset(savedSP + index)));
+  NEXT;
+}
 
-_ld_clo:
-  {
-    auto offset = readI32();
-    auto closure = *stack.byOffset(fp - 4);
+_ld_clo: {
+  auto offset = readI32();
+  auto closure = *stack.byOffset(fp - 4);
 
-    stack.push(reinterpret_cast<ptrt>(
-        Belem(reinterpret_cast<void*>(closure), BOX(offset + 1))));
+  stack.push(reinterpret_cast<ptrt>(
+      Belem(reinterpret_cast<void*>(closure), BOX(offset + 1))));
 
-    NEXT;
-  }
+  NEXT;
+}
 
-_st_glo:
-  {
-    auto index = readI32();
-    *stack.byOffset(index) = stack.top();
-    NEXT;
-  }
+_st_glo: {
+  auto index = readI32();
+  *stack.byOffset(index) = stack.top();
+  NEXT;
+}
 
-_st_loc:
-  {
-    auto index = readI32();
-    *stack.byOffset(fp + index) = stack.top();
-    NEXT;
-  }
+_st_loc: {
+  auto index = readI32();
+  *stack.byOffset(fp + index) = stack.top();
+  NEXT;
+}
 
-_st_arg:
-  {
-    auto index = readI32();
-    auto savedSP = UNBOX(*stack.byOffset(fp - 3));
-    *(stack.byOffset(savedSP + index)) = stack.top();
-    NEXT;
-  }
+_st_arg: {
+  auto index = readI32();
+  auto savedSP = UNBOX(*stack.byOffset(fp - 3));
+  *(stack.byOffset(savedSP + index)) = stack.top();
+  NEXT;
+}
 
-_st_clo:
-  {
-    auto offset = readI32();
-    auto closure = *stack.byOffset(fp - 4);
+_st_clo: {
+  auto offset = readI32();
+  auto closure = *stack.byOffset(fp - 4);
 
-    stack.push(reinterpret_cast<ptrt>(
-        Bsta(reinterpret_cast<void*>(closure), BOX(offset + 1),
-             reinterpret_cast<void*>(stack.pop()))));
-    NEXT;
-  }
+  stack.push(reinterpret_cast<ptrt>(
+      Bsta(reinterpret_cast<void*>(closure), BOX(offset + 1),
+           reinterpret_cast<void*>(stack.pop()))));
+  NEXT;
+}
 
 _jmp:
   ip = ipBase + readI32();
   NEXT;
 
-_cjmp_z:
-  {
-    auto offset = readI32();
-    if (UNBOX(stack.pop()) == 0) ip = ipBase + offset;
-    NEXT;
-  }
+_cjmp_z: {
+  auto offset = readI32();
+  if (UNBOX(stack.pop()) == 0) ip = ipBase + offset;
+  NEXT;
+}
 
-_cjmp_nz:
-  {
-    auto offset = readI32();
-    if (UNBOX(stack.pop()) != 0) ip = ipBase + offset;
-    NEXT;
-  }
+_cjmp_nz: {
+  auto offset = readI32();
+  if (UNBOX(stack.pop()) != 0) ip = ipBase + offset;
+  NEXT;
+}
 
-_call:
-  {
-    auto offset = readI32();
-    auto argsCount = readI32();
+_call: {
+  auto offset = readI32();
+  auto argsCount = readI32();
 
-    // positive offset points to BEGIN in bytecode
-    if (offset >= 0) {
-      stack.push(BOX(stack.offset() - argsCount));  // saving sp
-      stack.push(BOX(reinterpret_cast<ptrt>(ip)));  // saving ip
-      ip = ipBase + offset;
+  // positive offset points to BEGIN in bytecode
+  if (offset >= 0) {
+    stack.push(BOX(stack.offset() - argsCount));  // saving sp
+    stack.push(BOX(reinterpret_cast<ptrt>(ip)));  // saving ip
+    ip = ipBase + offset;
 
-      // negative points to external (built-in) function
-    } else {
-      auto name =
-          std::string_view(reinterpret_cast<const char*>(&pool[(-offset - 1)]));
+    // negative points to external (built-in) function
+  } else {
+    auto name =
+        std::string_view(reinterpret_cast<const char*>(&pool[(-offset - 1)]));
 
-      if (name == "write")
-        stack.push(Lwrite(stack.pop()));
+    if (name == "write")
+      stack.push(Lwrite(stack.pop()));
 
-      else if (name == "read")
-        stack.push(Lread());
+    else if (name == "read")
+      stack.push(Lread());
+
+    else if (name == "length") {
+      auto val = stack.pop();
+      stack.push(Llength(reinterpret_cast<void*>(val)));
+
+    } else if (name == "string") {
+      auto val = stack.pop();
+      stack.push(
+          reinterpret_cast<ptrt>(Lstring(reinterpret_cast<aint*>(&val))));
     }
 
-    NEXT;
+    else
+      failure("unknown function: %s\n", name.data());
   }
 
-_begin:
-  {
-    readI32();  // args
-    auto localsCount = readI32();
+  NEXT;
+}
 
-    stack.push(BOX(fp));  // saving fp
-    fp = stack.offset();
+_begin: {
+  readI32();  // args
+  auto localsCount = readI32();
 
-    // reserving space in stack for locals
-    for (std::size_t i = 0; i < localsCount; i++) stack.push(BOX(0));
-    NEXT;
-  }
+  stack.push(BOX(fp));  // saving fp
+  fp = stack.offset();
 
-_end:
-  {
-    /*
-     * -----------
-     *    arg_1     <- saved sp
-     * -----------
-     *     ...
-     * -----------
-     *    arg_n
-     * -----------
-     *  saved sp     saved in call
-     * -----------
-     *  saved ip     saved in call
-     * -----------
-     *  saved fp     saved in begin
-     * -----------
-     *   local_1     <- new fp
-     * -----------
-     *     ...
-     * -----------
-     *   local_n
-     * -----------
-     * return value
-     * -----------
-     *               <- sp
-     */
-    auto returnValue = stack.pop();
-    stack.jumpTo(fp);
-    fp = UNBOX(stack.pop());
-    ip = reinterpret_cast<std::uint8_t*>(UNBOX(stack.pop()));
-    stack.jumpTo(UNBOX(stack.pop()));  // jumps to saved sp
-    stack.push(returnValue);
-    NEXT;
-  }
+  // reserving space in stack for locals
+  for (std::size_t i = 0; i < localsCount; i++) stack.push(BOX(0));
+  NEXT;
+}
 
-_begin_closure:
-  {
-    readI32();  // args
-    auto localsCount = readI32();
-    readI32();  // captures
+_end: {
+  /*
+   * -----------
+   *    arg_1     <- saved sp
+   * -----------
+   *     ...
+   * -----------
+   *    arg_n
+   * -----------
+   *  saved sp     saved in call
+   * -----------
+   *  saved ip     saved in call
+   * -----------
+   *  saved fp     saved in begin
+   * -----------
+   *   local_1     <- new fp
+   * -----------
+   *     ...
+   * -----------
+   *   local_n
+   * -----------
+   * return value
+   * -----------
+   *               <- sp
+   */
+  auto returnValue = stack.pop();
+  stack.jumpTo(fp);
+  fp = UNBOX(stack.pop());
+  ip = reinterpret_cast<std::uint8_t*>(UNBOX(stack.pop()));
+  stack.jumpTo(UNBOX(stack.pop()));  // jumps to saved sp
+  stack.push(returnValue);
+  NEXT;
+}
 
-    stack.push(BOX(fp));  // saving fp
+_begin_closure: {
+  readI32();  // args
+  auto localsCount = readI32();
+  readI32();  // captures
 
-    fp = stack.offset();
+  stack.push(BOX(fp));  // saving fp
 
-    // reserving space in stack for locals
-    for (std::size_t i = 0; i < localsCount; i++) stack.push(BOX(0));
-    NEXT;
-  }
+  fp = stack.offset();
 
-_closure:
-  {
-    auto ipOffset = readI32();
-    auto capturesCount = readI32();
-    stack.push(BOX(ipOffset));
+  // reserving space in stack for locals
+  for (std::size_t i = 0; i < localsCount; i++) stack.push(BOX(0));
+  NEXT;
+}
 
-    for (std::size_t i = 0; i < capturesCount; i++) {
-      auto kind = readU8();
-      auto offset = readI32();
+_closure: {
+  auto ipOffset = readI32();
+  auto capturesCount = readI32();
+  stack.push(BOX(ipOffset));
 
-      switch (kind) {
-        case 0:  // global
-          stack.push(*stack.byOffset(offset));
-          break;
+  for (std::size_t i = 0; i < capturesCount; i++) {
+    auto kind = readU8();
+    auto offset = readI32();
 
-        case 1:  // local
-          stack.push(*stack.byOffset(fp + offset));
-          break;
+    switch (kind) {
+      case 0:  // global
+        stack.push(*stack.byOffset(offset));
+        break;
 
-        case 2: {  // arg
-          auto savedSP = UNBOX(*stack.byOffset(fp - 3));
-          stack.push(*(stack.byOffset(savedSP + offset)));
-          break;
-        }
+      case 1:  // local
+        stack.push(*stack.byOffset(fp + offset));
+        break;
 
-        case 3: {  // capture
-          auto savedSP = UNBOX(*stack.byOffset(fp - 3));
-          auto closure = *(stack.byOffset(savedSP + offset));
-          stack.push(reinterpret_cast<ptrt>(
-              Belem(reinterpret_cast<void*>(closure), BOX(offset + 1))));
-          break;
-        }
+      case 2: {  // arg
+        auto savedSP = UNBOX(*stack.byOffset(fp - 3));
+        stack.push(*(stack.byOffset(savedSP + offset)));
+        break;
+      }
+
+      case 3: {  // capture
+        auto savedSP = UNBOX(*stack.byOffset(fp - 3));
+        auto closure = *(stack.byOffset(fp - 4));
+        stack.push(reinterpret_cast<ptrt>(
+            Belem(reinterpret_cast<void*>(closure), BOX(offset + 1))));
+        break;
       }
     }
-
-    auto closure = reinterpret_cast<ptrt>(
-        Bclosure(reinterpret_cast<aint*>(
-                     stack.byOffset(stack.offset() - capturesCount - 1)),
-                 BOX(capturesCount + 1)));
-
-    stack.popN(capturesCount + 1);
-    stack.push(closure);
-    NEXT;
   }
 
-_callc:
-  {
-    auto argsCount = readI32();
-    auto offset = UNBOX(reinterpret_cast<ptrt>(
-        Belem(reinterpret_cast<void*>(stack.top()), BOX(0))));  // closure[0]
+  auto closure =
+      reinterpret_cast<ptrt>(Bclosure(reinterpret_cast<aint*>(stack.byOffset(
+                                          stack.offset() - capturesCount - 1)),
+                                      BOX(capturesCount)));
 
-    stack.push(BOX(stack.offset() - argsCount - 1));  // saving sp
-    stack.push(BOX(reinterpret_cast<ptrt>(ip)));      // saving ip
-    ip = ipBase + offset;
-    NEXT;
-  }
+  stack.popN(capturesCount + 1);
+  stack.push(closure);
+  NEXT;
+}
 
-_tag:
-  {
-    auto name = LtagHash(reinterpret_cast<const char*>(&pool[readI32()]));
-    auto fieldsCount = readI32();
-    stack.push(
-        Btag(reinterpret_cast<void*>(stack.pop()), name, BOX(fieldsCount)));
-    NEXT;
-  }
+_callc: {
+  auto argsCount = readI32();
+  auto closure = *stack.byOffset(stack.offset() - 1 - argsCount);
+  auto offset = UNBOX(reinterpret_cast<ptrt>(
+      Belem(reinterpret_cast<void*>(closure), BOX(0))));  // closure[0]
 
-_array:
-  {
-    auto elementsCount = readI32();
-    stack.push(
-        Barray_patt(reinterpret_cast<void*>(stack.pop()), BOX(elementsCount)));
-    NEXT;
-  }
+  stack.push(BOX(stack.offset() - argsCount - 1));  // saving sp
+  stack.push(BOX(reinterpret_cast<ptrt>(ip)));      // saving ip
+  ip = ipBase + offset;
+  NEXT;
+}
 
-_fail:
-  {
-    auto line = readI32();
-    auto col = readI32();
-    stack.pop();
-    failure("Match error at %d:%d\n", line, col);
-    NEXT;
-  }
+_tag: {
+  auto name = LtagHash(reinterpret_cast<const char*>(&pool[readI32()]));
+  auto fieldsCount = readI32();
+  stack.push(
+      Btag(reinterpret_cast<void*>(stack.pop()), name, BOX(fieldsCount)));
+  NEXT;
+}
 
-_fail_keep:
-  {
-    auto line = readI32();
-    auto col = readI32();
-    failure("Match error at %d:%d\n", line, col);
-    NEXT;
-  }
+_array: {
+  auto elementsCount = readI32();
+  stack.push(
+      Barray_patt(reinterpret_cast<void*>(stack.pop()), BOX(elementsCount)));
+  NEXT;
+}
+
+_fail: {
+  auto line = readI32();
+  auto col = readI32();
+  stack.pop();
+  failure("Match error at %d:%d\n", line, col);
+  NEXT;
+}
+
+_fail_keep: {
+  auto line = readI32();
+  auto col = readI32();
+  failure("Match error at %d:%d\n", line, col);
+  NEXT;
+}
 
 _line:
   readI32();
@@ -517,15 +507,14 @@ _patt_closure:
   stack.push(Bclosure_tag_patt(reinterpret_cast<void*>(stack.pop())));
   NEXT;
 
-_barray:
-  {
-    auto n = readI32();
-    auto elems = stack.byOffset(stack.offset() - n);
-    auto array = Barray(reinterpret_cast<aint*>(elems), BOX(n));
-    stack.popN(n);
-    stack.push(reinterpret_cast<ptrt>(array));
-    NEXT;
-  }
+_barray: {
+  auto n = readI32();
+  auto elems = stack.byOffset(stack.offset() - n);
+  auto array = Barray(reinterpret_cast<aint*>(elems), BOX(n));
+  stack.popN(n);
+  stack.push(reinterpret_cast<ptrt>(array));
+  NEXT;
+}
 
 _eof:
 }

@@ -25,7 +25,7 @@ extern void* Bsexp(aint* args, aint n);
 extern void* Bsta(void* x, aint i, void* v);
 extern void* Barray(aint* args, aint bn);
 extern void* Belem(void* p, aint i);
-extern void *Bclosure (aint* args, aint bn);
+extern void* Bclosure(aint* args, aint bn);
 
 extern aint Btag(void* d, aint t, aint n);
 extern aint Barray_patt(void* d, aint n);
@@ -42,6 +42,8 @@ extern _Noreturn void failure(char* s, ...);
 extern aint Lwrite(aint n);
 extern aint Lread();
 extern aint LtagHash(const char* s);
+extern int Llength(void* p);
+extern void* Lstring (aint *p);
 
 extern size_t __gc_stack_top;
 extern size_t __gc_stack_bottom;

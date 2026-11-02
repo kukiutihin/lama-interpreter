@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 
 #include "app-runtime.h"
@@ -31,7 +32,7 @@ class BytecodeReader {
  public:
   BytecodeReader(const char* path) {
     fd = open(path, O_RDONLY);
-    if (fd < 0) failure("failed to open %s: %s\n", path, std::strerror(errno));
+    if (fd < 0) failure("failed to open %s: %s\n", path, strerror(errno));
   }
 
   ~BytecodeReader() {

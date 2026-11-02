@@ -10,7 +10,6 @@
 #include <cstring>
 
 #include "app-runtime.h"
-#include "memory.h"
 
 static const std::uint32_t MAGIC = 0x614D614C;  // LaMa
 static const std::int32_t VERSION = 1;
@@ -18,12 +17,12 @@ static const std::int32_t VERSION = 1;
 Bytecode BytecodeReader::readBytecode() {
   struct stat st;
   if (fstat(fd, &st) < 0)
-    failure("failed to read from file: (fstat) %s\n", std::strerror(errno));
+    failure("failed to read from file: (fstat) %s\n", strerror(errno));
 
   // remember data ptr in class to call munmap in destructor
   data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (data == MAP_FAILED)
-    failure("failed to read from file: (mmap) %s\n", std::strerror(errno));
+    failure("failed to read from file: (mmap) %s\n", strerror(errno));
   dataSize = st.st_size;
 
   if (st.st_size < sizeof(BytecodeHeader))
