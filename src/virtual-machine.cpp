@@ -54,7 +54,7 @@ Stack VirtualMachine::allocateStack() {
  *               <- sp
  */
 
-void VirtualMachine::interpret(uint8_t* ipBase) {
+void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
   auto stack = allocateStack();
   std::uint8_t* pool = constantPool;
   std::size_t fp = 0;
@@ -73,6 +73,52 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
 
   auto readU8 = [&] [[gnu::always_inline]] () -> std::uint8_t {
     return read.operator()<std::uint8_t>(1);
+  };
+
+  auto isClosure = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    return BOX(
+        UNBOX(Bclosure_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1 : 0);
+  };
+
+  auto isSexp = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    return BOX(UNBOX(Bsexp_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
+                                                                         : 0);
+  };
+
+  auto isArray = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    return BOX(UNBOX(Barray_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
+                                                                          : 0);
+  };
+
+  auto isString = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    return BOX(UNBOX(Bstring_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
+                                                                           : 0);
+  };
+
+  auto opOffset = [&] [[gnu::always_inline]] () -> std::size_t {
+    return codeStartOffset + (ip - ipBase);
+  };
+
+  auto expectedClosure = [&] [[gnu::always_inline]] (ptrt * value) -> ptrt* {
+    if (!isClosure(*value))
+      failure("expected closure: %s:%d", opToString((Token) * (ip - 1)),
+              opOffset());
+    return value;
+  };
+
+  auto expectedNum = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    if (!UNBOXED(value))
+      failure("expected a num, but received a ptr: %s:%d",
+              opToString((Token) * (ip - 1)), opOffset());
+    return value;
+  };
+
+  auto expectedAggregate = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
+    if (!isClosure(value) && !isSexp(value) && !isArray(value) &&
+        !isString(value))
+      failure("expected an aggregate (indexable): %s:%d",
+              opToString((Token) * (ip - 1)), opOffset());
+    return value;
   };
 
   auto getGlobal = [&] [[gnu::always_inline]] (std::int32_t index) {
@@ -227,8 +273,8 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
 
       case OP_STA: {
         auto value = stack.pop();
-        auto index = stack.pop();
-        auto aggregate = stack.pop();
+        auto index = expectedNum(stack.pop());
+        auto aggregate = expectedAggregate(stack.pop());
 
         auto updated = Bsta(reinterpret_cast<void*>(aggregate), index,
                             reinterpret_cast<void*>(value));
@@ -249,8 +295,8 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
         break;
 
       case OP_ELEM: {
-        auto index = stack.pop();
-        auto aggregate = stack.pop();
+        auto index = expectedNum(stack.pop());
+        auto aggregate = expectedAggregate(stack.pop());
         auto value = Belem(reinterpret_cast<void*>(aggregate), index);
         stack.push(reinterpret_cast<ptrt>(value));
         break;
@@ -355,10 +401,11 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
 
       case OP_CALLC: {
         auto argsCount = readI32();
-        auto closureAddr = stack.byOffset(stack.offset() - argsCount - 1);
+        auto closureAddr =
+            expectedClosure(stack.byOffset(stack.offset() - argsCount - 1));
         auto closure = *closureAddr;
-        auto offset = UNBOX(reinterpret_cast<ptrt>(
-            Belem(reinterpret_cast<void*>(closure), BOX(0))));  // closure[0]
+        auto offset = UNBOX(expectedNum(reinterpret_cast<ptrt>(
+            Belem(reinterpret_cast<void*>(closure), BOX(0)))));  // closure[0]
 
         //    (sp)
         // [closure][arg_0]...[arg_n-1]... ->
@@ -372,7 +419,6 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
         // [arg_0]...[arg_n-1][closure]...
         stack.pop();
         stack.push(closure);
-
 
         callerSequence(argsCount + 1, offset);
         break;
@@ -466,15 +512,15 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
         break;
 
       case OP_PATT_STRING:
-        stack.push(Bstring_tag_patt(reinterpret_cast<void*>(stack.pop())));
+        stack.push(isString(stack.pop()));
         break;
 
       case OP_PATT_ARRAY:
-        stack.push(Barray_tag_patt(reinterpret_cast<void*>(stack.pop())));
+        stack.push(isArray(stack.pop()));
         break;
 
       case OP_PATT_SEXP:
-        stack.push(Bsexp_tag_patt(reinterpret_cast<void*>(stack.pop())));
+        stack.push(isSexp(stack.pop()));
         break;
 
       case OP_PATT_BOXED:
@@ -486,7 +532,7 @@ void VirtualMachine::interpret(uint8_t* ipBase) {
         break;
 
       case OP_PATT_CLOSURE:
-        stack.push(Bclosure_tag_patt(reinterpret_cast<void*>(stack.pop())));
+        stack.push(isClosure(stack.pop()));
         break;
 
       case OP_BARRAY: {

@@ -10,5 +10,5 @@ int main(int argc, char* argv[]) {
 
   GC gc;
   VirtualMachine vm(bytecode.constantPool, bytecode.header.globalsCount, gc);
-  vm.interpret(bytecode.code);
+  vm.interpret(bytecode.code, bytecode.codeStartOffset);
 }

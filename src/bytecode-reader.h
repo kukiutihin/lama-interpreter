@@ -21,6 +21,7 @@ struct BytecodeHeader {
 struct Bytecode {
   BytecodeHeader header;
   std::uint8_t* constantPool;
+  std::size_t codeStartOffset;
   std::uint8_t* code;
 };
 

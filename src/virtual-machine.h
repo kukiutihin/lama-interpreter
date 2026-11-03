@@ -19,7 +19,7 @@ class VirtualMachine {
   VirtualMachine(std::uint8_t* pool, std::size_t globalsCount, const GC& gc)
       : constantPool(pool), globalsCount(globalsCount) {}
 
-  void interpret(uint8_t*);
+  void interpret(uint8_t*, std::size_t);
 
   Stack allocateStack();
 };
