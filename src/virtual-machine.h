@@ -15,15 +15,15 @@ static constexpr size_t STACKSIZE = 64 * 1024 * ELEMSIZE;
 class VirtualMachine {
   ptrt stack[STACKSIZE];
 
-  std::uint8_t* constantPool;
-  std::int32_t poolSize;
-  std::size_t globalsCount;
+  const std::uint8_t* constantPool;
+  const std::int32_t poolSize;
+  const std::size_t globalsCount;
 
-  uint8_t* baseIp;
-  uint8_t* ip;
-  uint8_t* currentOpIp;
+  const uint8_t* baseIp;
+  const uint8_t* ip;
+  const uint8_t* currentOpIp;
+  const std::size_t codeSize;
   std::size_t fp;
-  std::size_t codeSize;
 
   // needed to use instead of real ip
   std::uint8_t dummyForEOF[1] = {OP_EOF};
@@ -37,8 +37,8 @@ class VirtualMachine {
         baseIp(bytecode.code),
         ip(bytecode.code),
         currentOpIp(bytecode.code),
-        fp(0),
-        codeSize(bytecode.codeSize) {
+        codeSize(bytecode.codeSize),
+        fp(0) {
     initStack();
   }
 
@@ -103,8 +103,16 @@ class VirtualMachine {
     return reinterpret_cast<ptrt*>((__gc_stack_top + (ELEMSIZE * offset)));
   }
 
+  [[gnu::always_inline]] std::size_t ipOffset() { return ip - baseIp; }
+
   template <typename T>
   [[gnu::always_inline]] T read() {
+    if (ipOffset() + sizeof(T) > codeSize)
+      failure(
+          "attempt to read outside code boundaries, current position: %d, code "
+          "size: %d, bytes to read: %d",
+          ipOffset(), codeSize, sizeof(T));
+
     T var;
     std::memcpy(&var, ip, sizeof(T));
     ip += sizeof(T);
@@ -246,8 +254,9 @@ class VirtualMachine {
     ip = baseIp + offset;
   };
 
-  [[gnu::always_inline]] std::uint8_t* getFromConstPool(std::int32_t offset) {
-    if (offset < 0 || offset > poolSize)
+  [[gnu::always_inline]] const std::uint8_t* getFromConstPool(
+      std::int32_t offset) {
+    if (offset < 0 || offset >= poolSize)
       failure(
           "invalid constant pool offset: %d, constant pool size: %d (%s:%d)",
           offset, poolSize, getLastTokenString(), getLastTokenOffset());
@@ -256,7 +265,7 @@ class VirtualMachine {
 
   [[gnu::always_inline]] void callBuiltin(std::int32_t offset) {
     auto name = std::string_view(
-        reinterpret_cast<char*>(getFromConstPool(-offset - 1)));
+        reinterpret_cast<const char*>(getFromConstPool(-offset - 1)));
 
     if (name == "write")
       push(Lwrite(pop()));

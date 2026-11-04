@@ -19,10 +19,10 @@ struct BytecodeHeader {
 };
 
 struct Bytecode {
-  BytecodeHeader header;
-  std::uint8_t* constantPool;
-  std::size_t codeSize;
-  std::uint8_t* code;
+  const BytecodeHeader header;
+  const std::uint8_t* constantPool;
+  const std::size_t codeSize;
+  const std::uint8_t* code;
 };
 
 class BytecodeReader {

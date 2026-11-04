@@ -39,6 +39,18 @@ Bytecode BytecodeReader::readBytecode() {
     failure("unknown bytecode version: %d , version 1 expected\n",
             header.version);
 
+  if (header.globalsCount < 0) 
+    failure("negative globals count value: %d\n",
+            header.globalsCount);
+
+  if (header.importsCount < 0) 
+    failure("negative imports count value: %d\n",
+            header.importsCount);
+
+  if (header.publicSymbolsCount < 0) 
+    failure("negative public symbols count value: %d\n",
+            header.publicSymbolsCount);
+
   std::size_t minSize = sizeof(BytecodeHeader) + header.constPoolSize +
                         (header.importsCount * 4) +
                         (header.publicSymbolsCount * 9) + 1;  // OP_EOF

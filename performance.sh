@@ -8,27 +8,30 @@ make -s app
 mkdir -p "$ROOT/perf"
 cd "$ROOT/perf"
 
+cleanup() {
+  cd "$ROOT" || exit
+  rm -rf "$ROOT/perf"
+  make -s clean
+}
+trap cleanup EXIT
+
 name=$(basename "$TEST" .lama)
 
 "$LAMAC" "$TEST" -b
 
 start1=$(date +%s%N)
-"$LAMAC" -i "$TEST" > /dev/null 2>&1
+"$LAMAC" -i "$TEST" < /dev/null 2>&1
 end1=$(date +%s%N)
 
 elapsed_ns1=$((end1 - start1))
 elapsed_sec1=$(awk "BEGIN {printf \"%.3f\", $elapsed_ns1 / 1000000000}")
 
 start2=$(date +%s%N)
-"$ROOT/app" "$name.bc" > /dev/null 2>&1
+"$ROOT/app" "$name.bc"
 end2=$(date +%s%N)
 
 elapsed_ns2=$((end2 - start2))
 elapsed_sec2=$(awk "BEGIN {printf \"%.3f\", $elapsed_ns2 / 1000000000}")
-
-cd "$ROOT"
-rm -rf "$ROOT/perf"
-make clean
 
 echo
 echo "lamac -i: ${elapsed_sec1}s"

@@ -57,68 +57,44 @@ void VirtualMachine::initStack() {
  *                 <- sp
  */
 
-#define BINOP(fn)                            \
-  {                                          \
-    auto b = reinterpret_cast<void*>(pop()); \
-    auto a = reinterpret_cast<void*>(pop()); \
-    push(fn(a, b));                          \
-  }
-
 void VirtualMachine::interpret() {
+  static constexpr aint (*binopTable[])(void*, void*) = {
+      Ls__Infix_43,    // OP_BINOP_ADD
+      Ls__Infix_45,    // OP_BINOP_SUB
+      Ls__Infix_42,    // OP_BINOP_MUL
+      Ls__Infix_47,    // OP_BINOP_DIV
+      Ls__Infix_37,    // OP_BINOP_MOD
+      Ls__Infix_60,    // OP_BINOP_LT
+      Ls__Infix_6061,  // OP_BINOP_LE
+      Ls__Infix_62,    // OP_BINOP_GT
+      Ls__Infix_6261,  // OP_BINOP_GE
+      Ls__Infix_6161,  // OP_BINOP_EQ
+      Ls__Infix_3361,  // OP_BINOP_NEQ
+      Ls__Infix_3838,  // OP_BINOP_AND
+      Ls__Infix_3333   // OP_BINOP_OR
+  };
+
   while (true) {
     currentOpIp = ip++;
+
     switch (*currentOpIp) {
-      case OP_BINOP_ADD:
-        BINOP(Ls__Infix_43);
-        break;
+      case OP_BINOP_ADD ... OP_BINOP_OR: {
+        auto b = pop();
+        auto a = pop();
 
-      case OP_BINOP_SUB:
-        BINOP(Ls__Infix_45);
-        break;
+        if (*currentOpIp == OP_BINOP_DIV && a == 1)  // BOXED 0
+          failure("attempt to divide by zero (%s:%d)", getLastTokenString(),
+                  getLastTokenOffset());
 
-      case OP_BINOP_MUL:
-        BINOP(Ls__Infix_42);
-        break;
+        if (*currentOpIp != OP_BINOP_EQ) {
+          expectedNum(a);
+          expectedNum(b);
+        }
 
-      case OP_BINOP_DIV:
-        BINOP(Ls__Infix_47);
+        push(binopTable[*currentOpIp - OP_BINOP_ADD](
+            reinterpret_cast<void*>(a), reinterpret_cast<void*>(b)));
         break;
-
-      case OP_BINOP_MOD:
-        BINOP(Ls__Infix_37);
-        break;
-
-      case OP_BINOP_LT:
-        BINOP(Ls__Infix_60);
-        break;
-
-      case OP_BINOP_LE:
-        BINOP(Ls__Infix_6061);
-        break;
-
-      case OP_BINOP_GT:
-        BINOP(Ls__Infix_62);
-        break;
-
-      case OP_BINOP_GE:
-        BINOP(Ls__Infix_6261);
-        break;
-
-      case OP_BINOP_EQ:
-        BINOP(Ls__Infix_6161);
-        break;
-
-      case OP_BINOP_NEQ:
-        BINOP(Ls__Infix_3361);
-        break;
-
-      case OP_BINOP_AND:
-        BINOP(Ls__Infix_3838);
-        break;
-
-      case OP_BINOP_OR:
-        BINOP(Ls__Infix_3333);
-        break;
+      }
 
       case OP_CONST:
         push(BOX(readI32()));
@@ -326,21 +302,25 @@ void VirtualMachine::interpret() {
           auto index = readI32();
 
           switch (kind) {
-            case 0:  // global
+            case GLO:  // global
               push(*getGlobal(index));
               break;
 
-            case 1:  // local
+            case LOC:  // local
               push(*getLocal(index));
               break;
 
-            case 2:  // arg
+            case ARG:  // arg
               push(*getArg(index));
               break;
 
-            case 3:  // capture
+            case CLO:  // capture
               push(getCapture(index));
               break;
+
+            default:
+              failure("unknown capture kind: %d (%s:%d)", kind,
+                      getLastTokenString(), getLastTokenOffset());
           }
         }
 
@@ -427,6 +407,9 @@ void VirtualMachine::interpret() {
 
       case OP_EOF:
         return;
+
+      default:
+        failure("unknown token %d by %d", *currentOpIp, getLastTokenOffset());
     }
   }
 }
