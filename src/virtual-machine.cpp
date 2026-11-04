@@ -3,197 +3,71 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <string_view>
 
 #include "app-runtime.h"
 #include "runtime_common.h"
-#include "stack.h"
 #include "tokens.h"
 
-Stack VirtualMachine::allocateStack() {
-  Stack stack;
+void VirtualMachine::initStack() {
+  __gc_stack_top = reinterpret_cast<std::size_t>(&stack[0]);
+  __gc_stack_bottom = __gc_stack_top;
 
   // reserves space for globals in stack
-  for (std::size_t i = 0; i < globalsCount; i++) stack.push(BOX(0));
+  for (std::size_t i = 0; i < globalsCount; i++) push(BOX(0));
 
   // nobody saves ip for main function (call is not called)
   // we will save it here manually so that main can return control to EOF
-  stack.push(BOX(0));                            // argc
-  stack.push(BOX(0));                            // argv
-  stack.push(BOX(globalsCount));                 // sp
-  stack.push(BOX(reinterpret_cast<ptrt>(eof)));  // ip
-
-  return stack;
+  push(BOX(0));                            // argc
+  push(BOX(0));                            // argv
+  push(BOX(globalsCount));                 // sp
+  push(BOX(reinterpret_cast<ptrt>(eof)));  // ip
 }
 
 /* STACK layout
  *
- * -----------
- *    arg_1     <- saved sp
- * -----------
- *     ...
- * -----------
- *    arg_n
- * -----------
- *   closure     optional
- * -----------
- *  saved sp     saved in call
- * -----------
- *  saved ip     saved in call
- * -----------
- *  saved fp     saved in begin
- * -----------
- *   local_1     <- new fp
- * -----------
- *     ...
- * -----------
- *   local_n
- * -----------
- * return value
- * -----------
- *               <- sp
+ * -------------
+ *     arg_1       <- saved sp
+ * -------------
+ *      ...
+ * -------------
+ *     arg_n
+ * -------------
+ *    closure      saved in CALLC
+ * -------------
+ *    saved sp     saved in CALL/CALLC
+ * -------------
+ *    saved ip     saved in CALL/CALLC
+ * -------------
+ *    saved fp     saved in BEGIN/BEGIN_CLOSURE
+ * -------------
+ *   argsCount     saved in BEGIN/BEGIN_CLOSURE
+ * -------------
+ * capturesCount   saved in BEGIN/BEGIN_CLOSURE
+ * -------------
+ *  locals count   saved in BEGIN/BEGIN_CLOSURE
+ * -------------
+ *    local_1      <- new fp
+ * -------------
+ *      ...
+ * -------------
+ *    local_n
+ * -------------
+ *  return value
+ * -------------
+ *                 <- sp
  */
 
-void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
-  auto stack = allocateStack();
-  std::uint8_t* pool = constantPool;
-  std::size_t fp = 0;
-  auto ip = ipBase;
-
-  auto read = [&ip]<typename T> [[gnu::always_inline]] (std::size_t size) -> T {
-    T var;
-    std::memcpy(&var, ip, size);
-    ip += size;
-    return var;
-  };
-
-  auto readI32 = [&] [[gnu::always_inline]] () -> std::int32_t {
-    return read.operator()<std::int32_t>(4);
-  };
-
-  auto readU8 = [&] [[gnu::always_inline]] () -> std::uint8_t {
-    return read.operator()<std::uint8_t>(1);
-  };
-
-  auto isClosure = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    return BOX(
-        UNBOX(Bclosure_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1 : 0);
-  };
-
-  auto isSexp = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    return BOX(UNBOX(Bsexp_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
-                                                                         : 0);
-  };
-
-  auto isArray = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    return BOX(UNBOX(Barray_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
-                                                                          : 0);
-  };
-
-  auto isString = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    return BOX(UNBOX(Bstring_tag_patt(reinterpret_cast<void*>(value))) > 0 ? 1
-                                                                           : 0);
-  };
-
-  auto opOffset = [&] [[gnu::always_inline]] () -> std::size_t {
-    return codeStartOffset + (ip - ipBase);
-  };
-
-  auto expectedClosure = [&] [[gnu::always_inline]] (ptrt * value) -> ptrt* {
-    if (!isClosure(*value))
-      failure("expected closure: %s:%d", opToString((Token) * (ip - 1)),
-              opOffset());
-    return value;
-  };
-
-  auto expectedNum = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    if (!UNBOXED(value))
-      failure("expected a num, but received a ptr: %s:%d",
-              opToString((Token) * (ip - 1)), opOffset());
-    return value;
-  };
-
-  auto expectedAggregate = [&] [[gnu::always_inline]] (ptrt value) -> ptrt {
-    if (!isClosure(value) && !isSexp(value) && !isArray(value) &&
-        !isString(value))
-      failure("expected an aggregate (indexable): %s:%d",
-              opToString((Token) * (ip - 1)), opOffset());
-    return value;
-  };
-
-  auto getGlobal = [&] [[gnu::always_inline]] (std::int32_t index) {
-    return stack.byOffset(index);
-  };
-
-  auto getLocal = [&] [[gnu::always_inline]] (std::int32_t index) {
-    return stack.byOffset(fp + index);
-  };
-
-  auto getArg = [&] [[gnu::always_inline]] (std::int32_t index) {
-    auto savedSP = UNBOX(*stack.byOffset(fp - 3));
-    return stack.byOffset(savedSP + index);
-  };
-
-  auto getClosure = [&] [[gnu::always_inline]] () {
-    return stack.byOffset(fp - 4);
-  };
-
-  auto getCapture = [&] [[gnu::always_inline]] (std::int32_t index) {
-    auto closure = *getClosure();
-    return reinterpret_cast<ptrt>(
-        Belem(reinterpret_cast<void*>(closure), BOX(index + 1)));
-  };
-
-  auto jumpTo = [&] [[gnu::always_inline]] (std::int32_t offset) {
-    ip = ipBase + offset;
-  };
-
-  auto prologue = [&] [[gnu::always_inline]] (std::int32_t localsCount) {
-    stack.push(BOX(fp));  // saving fp
-    fp = stack.offset();
-
-    // reserving space in stack for locals
-    for (std::size_t i = 0; i < localsCount; i++) stack.push(BOX(0));
-  };
-
-  auto callerSequence = [&] [[gnu::always_inline]] (std::int32_t argsCount,
-                                                    std::int32_t offset) {
-    stack.push(BOX(stack.offset() - argsCount));  // saving sp
-    stack.push(BOX(reinterpret_cast<ptrt>(ip)));  // saving ip
-    ip = ipBase + offset;
-  };
-
-  auto callBuiltin = [&] [[gnu::always_inline]] (std::int32_t offset) {
-    auto name =
-        std::string_view(reinterpret_cast<const char*>(&pool[(-offset - 1)]));
-
-    if (name == "write")
-      stack.push(Lwrite(stack.pop()));
-
-    else if (name == "read")
-      stack.push(Lread());
-
-    else if (name == "length") {
-      auto val = stack.pop();
-      stack.push(Llength(reinterpret_cast<void*>(val)));
-
-    } else if (name == "string") {
-      auto val = stack.pop();
-      stack.push(
-          reinterpret_cast<ptrt>(Lstring(reinterpret_cast<aint*>(&val))));
-    } else
-      failure("unknown function: %s\n", name.data());
-  };
-
-#define BINOP(fn)                                  \
-  {                                                \
-    auto b = reinterpret_cast<void*>(stack.pop()); \
-    auto a = reinterpret_cast<void*>(stack.pop()); \
-    stack.push(fn(a, b));                          \
+#define BINOP(fn)                            \
+  {                                          \
+    auto b = reinterpret_cast<void*>(pop()); \
+    auto a = reinterpret_cast<void*>(pop()); \
+    push(fn(a, b));                          \
   }
 
+void VirtualMachine::interpret() {
   while (true) {
-    switch (*ip++) {
+    currentOpIp = ip++;
+    switch (*currentOpIp) {
       case OP_BINOP_ADD:
         BINOP(Ls__Infix_43);
         break;
@@ -247,141 +121,148 @@ void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
         break;
 
       case OP_CONST:
-        stack.push(BOX(readI32()));
+        push(BOX(readI32()));
         break;
 
       case OP_STRING: {
-        auto rawString = &pool[readI32()];
+        auto rawString = getFromConstPool(readI32());
         auto ptr = Bstring(reinterpret_cast<aint*>(&rawString));
-        stack.push(reinterpret_cast<ptrt>(ptr));
+        push(reinterpret_cast<ptrt>(ptr));
         break;
       }
 
       case OP_SEXP: {
-        auto tag = reinterpret_cast<const char*>(&pool[readI32()]);
-        stack.push(LtagHash(tag));
+        auto tag = getFromConstPool(readI32());
+        push(LtagHash(reinterpret_cast<const char*>(tag)));
 
         auto n = readI32();
-        auto ptr = Bsexp(
-            reinterpret_cast<aint*>(stack.byOffset(stack.offset() - (n + 1))),
-            BOX(n + 1));
+        auto ptr =
+            Bsexp(reinterpret_cast<aint*>(byOffset(stackOffset() - (n + 1))),
+                  BOX(n + 1));
 
-        stack.popN(n + 1);
-        stack.push(reinterpret_cast<ptrt>(ptr));
+        popN(n + 1);
+        push(reinterpret_cast<ptrt>(ptr));
         break;
       }
 
       case OP_STA: {
-        auto value = stack.pop();
-        auto index = expectedNum(stack.pop());
-        auto aggregate = expectedAggregate(stack.pop());
+        auto value = pop();
+        auto index = expectedNum(pop());
+        auto aggregate = expectedAggregate(pop());
 
         auto updated = Bsta(reinterpret_cast<void*>(aggregate), index,
                             reinterpret_cast<void*>(value));
-        stack.push(reinterpret_cast<ptrt>(updated));
+        push(reinterpret_cast<ptrt>(updated));
         break;
       }
 
       case OP_DROP:
-        stack.pop();
+        pop();
         break;
 
       case OP_DUP:
-        stack.push(stack.top());
+        push(top());
         break;
 
       case OP_SWAP:
-        stack.swap();
+        stackSwap();
         break;
 
       case OP_ELEM: {
-        auto index = expectedNum(stack.pop());
-        auto aggregate = expectedAggregate(stack.pop());
+        auto index = expectedNum(pop());
+        auto aggregate = expectedAggregate(pop());
         auto value = Belem(reinterpret_cast<void*>(aggregate), index);
-        stack.push(reinterpret_cast<ptrt>(value));
+        push(reinterpret_cast<ptrt>(value));
         break;
       }
 
       case OP_LD_GLO: {
         auto index = readI32();
-        stack.push(*getGlobal(index));
+        push(*getGlobal(index));
         break;
       }
 
       case OP_LD_LOC: {
         auto index = readI32();
-        stack.push(*getLocal(index));
+        push(*getLocal(index));
         break;
       }
 
       case OP_LD_ARG: {
         auto index = readI32();
-        stack.push(*getArg(index));
+        push(*getArg(index));
         break;
       }
 
       case OP_LD_CLO: {
         auto index = readI32();
-        stack.push(reinterpret_cast<ptrt>(getCapture(index)));
+        push(reinterpret_cast<ptrt>(getCapture(index)));
         break;
       }
 
       case OP_ST_GLO: {
         auto index = readI32();
-        *getGlobal(index) = stack.top();
+        *getGlobal(index) = top();
         break;
       }
 
       case OP_ST_LOC: {
         auto index = readI32();
-        *getLocal(index) = stack.top();
+        *getLocal(index) = top();
         break;
       }
 
       case OP_ST_ARG: {
         auto index = readI32();
-        *getArg(index) = stack.top();
+        *getArg(index) = top();
         break;
       }
 
       case OP_ST_CLO: {
-        auto offset = readI32();
+        auto index = readI32();
         auto closure = *getClosure();
 
-        stack.push(reinterpret_cast<ptrt>(
-            Bsta(reinterpret_cast<void*>(closure), BOX(offset + 1),
-                 reinterpret_cast<void*>(stack.pop()))));
+        auto capturesCount = *byOffset(fp - 2);
+        if (index < 0 || index >= capturesCount)
+          failure(
+              "incorrect closure capture index: %d, number of captures: %d "
+              "(%s:%s)",
+              index, capturesCount, getLastTokenString(), getLastTokenOffset());
+
+        push(reinterpret_cast<ptrt>(Bsta(reinterpret_cast<void*>(closure),
+                                         BOX(index + 1),
+                                         reinterpret_cast<void*>(pop()))));
         break;
       }
 
       case OP_JMP:
-        jumpTo(readI32());
+        jumpToIp(readI32());
         break;
 
       case OP_CJMP_Z: {
         auto offset = readI32();
-        if (UNBOX(stack.pop()) == 0) jumpTo(offset);
+        if (UNBOX(pop()) == 0) jumpToIp(offset);
         break;
       }
 
       case OP_CJMP_NZ: {
         auto offset = readI32();
-        if (UNBOX(stack.pop()) != 0) jumpTo(offset);
+        if (UNBOX(pop()) != 0) jumpToIp(offset);
         break;
       }
 
       case OP_BEGIN: {
-        readI32();  // args
+        auto argsCount = readI32();
         auto localsCount = readI32();
-        prologue(localsCount);
+        prologue(localsCount, 0, argsCount);
         break;
       }
 
       case OP_BEGIN_CLOSURE: {
-        readI32();  // args
+        auto argsCount = readI32();
         auto localsCount = readI32();
-        readI32();  // captures
-        prologue(localsCount);
+        auto capturesCount = readI32();
+        prologue(localsCount, capturesCount, argsCount);
         break;
       }
 
@@ -402,42 +283,43 @@ void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
       case OP_CALLC: {
         auto argsCount = readI32();
         auto closureAddr =
-            expectedClosure(stack.byOffset(stack.offset() - argsCount - 1));
+            expectedClosure(byOffset(stackOffset() - argsCount - 1));
         auto closure = *closureAddr;
         auto offset = UNBOX(expectedNum(reinterpret_cast<ptrt>(
             Belem(reinterpret_cast<void*>(closure), BOX(0)))));  // closure[0]
 
-        //    (sp)
-        // [closure][arg_0]...[arg_n-1]... ->
-        //
-        //   (sp)
+        // [captures count][closure][arg_0]...[arg_n-1]...
+        // ->
         // [arg_0]...[arg_n-1]...
         for (std::size_t i = 0; i < argsCount; i++)
           closureAddr[i] = closureAddr[i + 1];
 
-        //   (sp)
-        // [arg_0]...[arg_n-1][closure]...
-        stack.pop();
-        stack.push(closure);
+        // ->
+        // [arg_0]...[arg_n-1][closure][captures count]...
+        pop();
+        push(closure);
 
         callerSequence(argsCount + 1, offset);
         break;
       }
 
       case OP_END: {
-        auto returnValue = stack.pop();
-        stack.jumpTo(fp);
-        fp = UNBOX(stack.pop());
-        ip = reinterpret_cast<std::uint8_t*>(UNBOX(stack.pop()));
-        stack.jumpTo(UNBOX(stack.pop()));  // jumps to saved sp
-        stack.push(returnValue);
+        auto returnValue = pop();
+        stackJumpTo(fp);
+        pop();  // locals count
+        pop();  // captures count
+        pop();  // args count
+        fp = UNBOX(pop());
+        ip = reinterpret_cast<std::uint8_t*>(UNBOX(pop()));
+        stackJumpTo(UNBOX(pop()));  // jumps to saved sp
+        push(returnValue);
         break;
       }
 
       case OP_CLOSURE: {
         auto ipOffset = readI32();
         auto capturesCount = readI32();
-        stack.push(BOX(ipOffset));
+        push(BOX(ipOffset));
 
         for (std::size_t i = 0; i < capturesCount; i++) {
           auto kind = readU8();
@@ -445,52 +327,51 @@ void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
 
           switch (kind) {
             case 0:  // global
-              stack.push(*getGlobal(index));
+              push(*getGlobal(index));
               break;
 
             case 1:  // local
-              stack.push(*getLocal(index));
+              push(*getLocal(index));
               break;
 
             case 2:  // arg
-              stack.push(*getArg(index));
+              push(*getArg(index));
               break;
 
             case 3:  // capture
-              stack.push(getCapture(index));
+              push(getCapture(index));
               break;
           }
         }
 
         auto closure = reinterpret_cast<ptrt>(
             Bclosure(reinterpret_cast<aint*>(
-                         stack.byOffset(stack.offset() - capturesCount - 1)),
+                         byOffset(stackOffset() - capturesCount - 1)),
                      BOX(capturesCount)));
 
-        stack.popN(capturesCount + 1);
-        stack.push(closure);
+        popN(capturesCount + 1);
+        push(closure);
         break;
       }
 
       case OP_TAG: {
-        auto name = LtagHash(reinterpret_cast<const char*>(&pool[readI32()]));
+        auto name = LtagHash(
+            reinterpret_cast<const char*>(getFromConstPool(readI32())));
         auto fieldsCount = readI32();
-        stack.push(
-            Btag(reinterpret_cast<void*>(stack.pop()), name, BOX(fieldsCount)));
+        push(Btag(reinterpret_cast<void*>(pop()), name, BOX(fieldsCount)));
         break;
       }
 
       case OP_ARRAY: {
         auto elementsCount = readI32();
-        stack.push(Barray_patt(reinterpret_cast<void*>(stack.pop()),
-                               BOX(elementsCount)));
+        push(Barray_patt(reinterpret_cast<void*>(pop()), BOX(elementsCount)));
         break;
       }
 
       case OP_FAIL: {
         auto line = readI32();
         auto col = readI32();
-        stack.pop();
+        pop();
         failure("Match error at %d:%d\n", line, col);
         break;
       }
@@ -507,40 +388,40 @@ void VirtualMachine::interpret(uint8_t* ipBase, std::size_t codeStartOffset) {
         break;
 
       case OP_PATT_STR_CMP:
-        stack.push(Bstring_patt(reinterpret_cast<void*>(stack.pop()),
-                                reinterpret_cast<void*>(stack.pop())));
+        push(Bstring_patt(reinterpret_cast<void*>(pop()),
+                          reinterpret_cast<void*>(pop())));
         break;
 
       case OP_PATT_STRING:
-        stack.push(isString(stack.pop()));
+        push(BOX(isString(pop())));
         break;
 
       case OP_PATT_ARRAY:
-        stack.push(isArray(stack.pop()));
+        push(BOX(isArray(pop())));
         break;
 
       case OP_PATT_SEXP:
-        stack.push(isSexp(stack.pop()));
+        push(BOX(isSexp(pop())));
         break;
 
       case OP_PATT_BOXED:
-        stack.push(Bboxed_patt(reinterpret_cast<void*>(stack.pop())));
+        push(Bboxed_patt(reinterpret_cast<void*>(pop())));
         break;
 
       case OP_PATT_UNBOXED:
-        stack.push(Bunboxed_patt(reinterpret_cast<void*>(stack.pop())));
+        push(Bunboxed_patt(reinterpret_cast<void*>(pop())));
         break;
 
       case OP_PATT_CLOSURE:
-        stack.push(isClosure(stack.pop()));
+        push(BOX(isClosure(pop())));
         break;
 
       case OP_BARRAY: {
         auto n = readI32();
-        auto elems = stack.byOffset(stack.offset() - n);
+        auto elems = byOffset(stackOffset() - n);
         auto array = Barray(reinterpret_cast<aint*>(elems), BOX(n));
-        stack.popN(n);
-        stack.push(reinterpret_cast<ptrt>(array));
+        popN(n);
+        push(reinterpret_cast<ptrt>(array));
         break;
       }
 

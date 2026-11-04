@@ -58,5 +58,5 @@ Bytecode BytecodeReader::readBytecode() {
   // skip publicSymbols
   bytes += header.publicSymbolsCount * 9;
 
-  return Bytecode{header, constPool, minSize, bytes};
+  return Bytecode{header, constPool, st.st_size - minSize, bytes};
 }

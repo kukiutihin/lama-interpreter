@@ -9,6 +9,6 @@ int main(int argc, char* argv[]) {
   auto bytecode = reader.readBytecode();
 
   GC gc;
-  VirtualMachine vm(bytecode.constantPool, bytecode.header.globalsCount, gc);
-  vm.interpret(bytecode.code, bytecode.codeStartOffset);
+  VirtualMachine vm(bytecode, gc);
+  vm.interpret();
 }
