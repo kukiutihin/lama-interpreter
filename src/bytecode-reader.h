@@ -3,9 +3,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
 
 #include "app-runtime.h"
 

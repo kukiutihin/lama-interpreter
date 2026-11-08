@@ -1,7 +1,2 @@
 CompileFlags:
-  Add:
-    - -std=gnu++23
-    - -ILama/runtime
-    - -I../Lama/runtime
-    - -Wno-writable-strings
-
+  CompilationDatabase: build

@@ -4,10 +4,11 @@
 !*/
 
 !Makefile
-/Lama
-/test
+/tests
+/build
 /example
 /perf
+/Lama
 
 *.out 
 *.so
