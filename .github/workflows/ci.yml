@@ -17,7 +17,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ make 
+          sudo apt-get install -y cmake clang make 
 
       - name: clone Lama in the root
         run: |
@@ -25,7 +25,7 @@ jobs:
 
       - name: Build lamastat
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           cmake --build build --target lamastat -j$(nproc)
 
       - name: Run lamastat on Sort.bc
