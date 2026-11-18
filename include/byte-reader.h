@@ -35,10 +35,16 @@ class ByteReader {
   [[gnu::always_inline]] std::uint8_t u8() { return read<std::uint8_t>(); }
 
   [[gnu::always_inline]] void skip(std::size_t n) {
+    if (pos_ + n > (size_ - 1))
+      failure("unexpected eof by offset: %d (%d)", pos_ + n, pos_);
     pos_ = (pos_ + n > size_) ? size_ : pos_ + n;
   }
 
-  [[gnu::always_inline]] void jumpTo(std::size_t target) { pos_ = target; }
+  [[gnu::always_inline]] void jumpTo(std::size_t target) {
+    if (target < 0 || target > (size_ - 1))
+      failure("attempt to jump to invalid offset: %d (%d)", target, pos_);
+    pos_ = target;
+  }
 
   [[gnu::always_inline]] std::size_t pos() const { return pos_; }
 
