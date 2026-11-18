@@ -29,4 +29,4 @@ target_include_directories(include INTERFACE
 )
 
 add_subdirectory(interpreter)
-add_subdirectory(bytecode_statistics)
+add_subdirectory(bytecode-statistics)

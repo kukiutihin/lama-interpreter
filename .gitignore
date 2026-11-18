@@ -5,7 +5,7 @@
 
 !Makefile
 /tests
-/build
+build
 /perf
 /Lama
 

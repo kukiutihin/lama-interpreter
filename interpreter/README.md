@@ -1,6 +1,4 @@
-## LaMa interpreter
-
-Interpreter depends on the LaMa runtime, clone it to the root.
+Interpreter depends on the Lama runtime, clone Lama repository to the root.
 
 ### Build and run
 ```bash
@@ -10,7 +8,7 @@ cmake --build build --target lamaj
 ```
 
 ### Tests
-Tests use the LaMa compiler for comparison, so `lamac` must be available in PATH.
+Tests use the Lama compiler for comparison, so `lamac` must be available in PATH.
 
 To run correctness tests use `./regression`, example:
 ```sh
