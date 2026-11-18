@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
   auto bytecode = reader.loadBytecode();
 
   BytecodeAnalyzer analyzer(bytecode);
-  auto report = analyzer.analyze();
+  auto report = analyzer.collectStatistics();
 
   auto single = mapToVec(report.singleFrequences);
   auto pair = mapToVec(report.pairFrequences);

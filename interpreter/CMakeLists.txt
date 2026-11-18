@@ -9,8 +9,8 @@
 
 
 add_executable(lamaj
-  main.cpp
-  virtual-machine.cpp
+  src/main.cpp
+  src/virtual-machine.cpp
 )
 
 target_compile_options(lamaj PRIVATE

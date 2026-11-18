@@ -1,6 +1,6 @@
 add_executable(lamastat
-  main.cpp
-  bytecode-analyzer.cpp
+  src/main.cpp
+  src/bytecode-analyzer.cpp
 )
 
 target_compile_options(lamastat PRIVATE

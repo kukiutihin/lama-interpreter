@@ -2,9 +2,9 @@
 
 #include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
+#include "bool-pair-vec.h"
 #include "bytecode-loader.h"
 
 using PairFrequences = std::unordered_map<std::uint16_t, std::size_t>;
@@ -18,17 +18,19 @@ struct Report {
 class BytecodeAnalyzer {
   Bytecode bytecode;
 
-  std::unordered_set<std::size_t> getSeparators();
+  BoolPairVec reachability();
 
  public:
   BytecodeAnalyzer(const Bytecode& bc) : bytecode(bc) {}
-  Report analyze();
+  Report collectStatistics();
 
-  static std::uint16_t pack(std::uint8_t higher, std::uint8_t lower) {
+  [[gnu::always_inline]] static std::uint16_t pack(std::uint8_t higher,
+                                                   std::uint8_t lower) {
     return (std::uint16_t)0 | (higher << 8) | lower;
   }
 
-  static std::pair<std::uint8_t, std::uint8_t> unpack(std::uint16_t value) {
+  [[gnu::always_inline]] static std::pair<std::uint8_t, std::uint8_t> unpack(
+      std::uint16_t value) {
     return std::pair{value >> 8, value & (std::uint8_t)255};
   }
 };
