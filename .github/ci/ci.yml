@@ -1,0 +1,38 @@
+name: LamaStat CI
+
+on:
+  push:
+    branches: [ main]
+  pull_request:
+    branches: [ main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ make 
+
+      - name: clone Lama in the root
+        run: |
+          git clone https://github.com/PLTools/Lama.git Lama
+
+      - name: Build lamastat
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target lamastat -j$(nproc)
+
+      - name: Run lamastat on Sort.bc
+        run: |
+          ./build/bytecode_statistics/lamastat example/Sort.bc
+
+      - name: Run DCE correctness script
+        run: |
+          chmod +x bytecode-statistics/dceCorrectness.sh
+          ./bytecode-statistics/dceCorrectness.sh
