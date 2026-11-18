@@ -2,8 +2,8 @@
 
 set -e
 
-SCRIPT_DIR="$(pwd)"
-ROOT_DIR="${SCRIPT_DIR}/.."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 GREEN='\033[1;32m'
 RED='\033[1;31m'
@@ -11,13 +11,12 @@ BOLD='\033[1m'
 RESET='\033[0m'
 
 cleanup() {
-  rm -rf "$SCRIPT_DIR/build"
+  rm -rf "$ROOT_DIR/build"
 }
+trap cleanup EXIT
 
 cmake -S "$ROOT_DIR" -B "$ROOT_DIR/build"
 cmake --build "$ROOT_DIR/build" --target lamastat
-
-trap cleanup EXIT 
 
 LAMASTAT="$ROOT_DIR/build/bytecode-statistics/lamastat"
 
