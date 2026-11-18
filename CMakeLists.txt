@@ -6,13 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(RUNTIME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Lama/runtime)
-
+set(RUNTIME_DIR ${CMAKE_SOURCE_DIR}/Lama/runtime)
 add_library(runtime STATIC
   ${RUNTIME_DIR}/runtime.c 
   ${RUNTIME_DIR}/gc.c
 )
-
 target_compile_options(runtime PRIVATE
   $<$<COMPILE_LANGUAGE:C>:-Wno-shift-negative-value>
   $<$<COMPILE_LANGUAGE:C>:-Wno-shift-count-overflow>
@@ -20,9 +18,14 @@ target_compile_options(runtime PRIVATE
   $<$<COMPILE_LANGUAGE:C>:-Wno-int-to-pointer-cast>
   $<$<COMPILE_LANGUAGE:C>:-Wno-writable-strings>
 )
-
 target_include_directories(runtime PUBLIC
     ${RUNTIME_DIR}
+)
+
+set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+add_library(include INTERFACE)
+target_include_directories(include INTERFACE
+  ${INCLUDE_DIR}
 )
 
 add_subdirectory(interpreter)

@@ -7,7 +7,7 @@
 #include <utility>
 
 #include "app-runtime.h"
-#include "bytecode-reader.h"
+#include "bytecode-loader.h"
 #include "tokens.h"
 
 static constexpr size_t ELEMSIZE = sizeof(ptrt);

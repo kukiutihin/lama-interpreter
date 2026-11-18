@@ -11,7 +11,6 @@
 add_executable(lamaj
   main.cpp
   virtual-machine.cpp
-  bytecode-reader.cpp
 )
 
 target_compile_options(lamaj PRIVATE
@@ -20,5 +19,6 @@ target_compile_options(lamaj PRIVATE
 
 target_link_libraries(lamaj PRIVATE 
   runtime
+  include
   # asmjit::asmjit
 )

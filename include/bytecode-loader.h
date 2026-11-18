@@ -1,0 +1,103 @@
+#pragma once
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
+
+#include "app-runtime.h"
+
+static const std::uint32_t MAGIC = 0x614D614C;  // LaMa
+static const std::int32_t VERSION = 1;
+
+struct BytecodeHeader {
+  std::uint32_t magic;
+  std::int32_t version;
+  std::int32_t constPoolSize;
+  std::int32_t globalsCount;
+  std::int32_t importsCount;
+  std::int32_t publicSymbolsCount;
+};
+
+struct Bytecode {
+  const BytecodeHeader header;
+  const std::uint8_t* constantPool;
+  const std::size_t codeSize;
+  const std::uint8_t* code;
+};
+
+class BytecodeLoader {
+  int fd;
+  void* data = nullptr;
+  std::size_t dataSize;
+
+ public:
+  BytecodeLoader(const char* path) {
+    fd = open(path, O_RDONLY);
+    if (fd < 0) failure("failed to open %s: %s\n", path, strerror(errno));
+  }
+
+  ~BytecodeLoader() {
+    if (data) munmap(data, dataSize);
+  }
+
+  Bytecode loadBytecode() {
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+      failure("failed to read from file: (fstat) %s\n", strerror(errno));
+
+    // remember data ptr in class to call munmap in destructor
+    data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (data == MAP_FAILED)
+      failure("failed to read from file: (mmap) %s\n", strerror(errno));
+    dataSize = st.st_size;
+
+    if (st.st_size < sizeof(BytecodeHeader))
+      failure("corrupted bytecode: file smaller than required header\n");
+
+    BytecodeHeader header;
+    memcpy(&header, data, sizeof(BytecodeHeader));
+
+    if (header.magic != MAGIC)
+      failure("unknown magic: %s , 'LaMa' expected\n",
+              reinterpret_cast<char*>(header.magic));
+
+    if (header.version != VERSION)
+      failure("unknown bytecode version: %d , version 1 expected\n",
+              header.version);
+
+    if (header.globalsCount < 0)
+      failure("negative globals count value: %d\n", header.globalsCount);
+
+    if (header.importsCount < 0)
+      failure("negative imports count value: %d\n", header.importsCount);
+
+    if (header.publicSymbolsCount < 0)
+      failure("negative public symbols count value: %d\n",
+              header.publicSymbolsCount);
+
+    std::size_t minSize = sizeof(BytecodeHeader) + header.constPoolSize +
+                          (header.importsCount * 4) +
+                          (header.publicSymbolsCount * 9) + 1;  // OP_EOF
+
+    if (dataSize < minSize) {
+      failure("corrupted bytecode: file truncated\n");
+    }
+
+    auto bytes = reinterpret_cast<std::uint8_t*>(data);
+    bytes += sizeof(BytecodeHeader);
+    std::uint8_t* constPool = bytes;
+    bytes += header.constPoolSize;
+
+    // skip imports
+    bytes += header.importsCount * 4;
+
+    // skip publicSymbols
+    bytes += header.publicSymbolsCount * 9;
+
+    return Bytecode{header, constPool, st.st_size - minSize, bytes};
+  }
+};

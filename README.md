@@ -1,7 +1,13 @@
 ## LaMa interpreter
 
-### Build 
-Interpreter depends on the LaMa runtime, clone it to the root then use `make`.
+Interpreter depends on the LaMa runtime, clone it to the root.
+
+### Build and run
+```bash
+cmake -B build 
+cmake --build build --target lamaj
+./build/interpreter/lamaj <bytecode file>
+```
 
 ### Tests
 Tests use the LaMa compiler for comparison, so `lamac` must be available in PATH.
