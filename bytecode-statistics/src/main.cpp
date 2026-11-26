@@ -14,10 +14,8 @@ int main(int argc, char* argv[]) {
   }
 
   auto* bytecode = bytecode_load(argv[1]);
-
   BytecodeAnalyzer analyzer(bytecode);
-  auto report = analyzer.countFrequencies();
-  std::println("{}", analyzer.reportToString(report));
+  analyzer.printStatistics();
 
   bytecode_free(bytecode);
 }

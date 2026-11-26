@@ -1,10 +1,12 @@
 #include "bytecode-analyzer.h"
 
+#include <complex.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
-#include <queue>
+#include <print>
 #include <ranges>
 #include <sstream>
 #include <string_view>
@@ -13,166 +15,67 @@
 
 #include "bytecode.h"
 #include "disassemble.h"
-#include "opcodes.h"
 #include "reader.h"
+
+std::vector<std::uint32_t> BytecodeAnalyzer::preparePublics(
+    std::vector<bool>& isSep /* also used as visited */) {
+  std::vector<std::uint32_t> entries;
+  entries.reserve(bc->pubs_len);
+  entries.push_back(0);
+
+  bytecode_iterator iter{};
+  bytecode_pubs_init(&iter, bc);
+  public_symbol symb{};
+
+  while (bytecode_pubs_next(&iter, &symb)) {
+    if (symb.code_offset < 0 || symb.code_offset >= bc->code_size)
+      failure("Incorrect public symbol offset: %d, code size: %d",
+              symb.code_offset, bc->code_size);
+    if (!isSep[symb.code_offset]) {
+      isSep[symb.code_offset] = true;
+      entries.push_back(symb.code_offset);
+    }
+  }
+  return entries;
+}
 
 std::pair<std::vector<bool>, std::vector<bool>>
 BytecodeAnalyzer::reachability() {
   byte_reader reader{bc->code, bc->code_size, 0};
-
   std::vector<bool> visited(bc->code_size);
   std::vector<bool> isSep(bc->code_size);
 
-  std::queue<std::size_t> entries;
-  entries.push(0);
-  bytecode_iterator iter{};
-  bytecode_pubs_init(&iter, bc);
-  public_symbol symb{};
-  while (bytecode_pubs_next(&iter, &symb)) entries.push(symb.code_offset);
+  auto entries = preparePublics(isSep);
+
+  auto pop = [&]() {
+    auto el = entries.back();
+    entries.pop_back();
+    return el;
+  };
 
   while (!entries.empty()) {
-    reader.pos = entries.front();
-    entries.pop();
+    reader.pos = pop();
 
     while (reader.pos < reader.size && !visited[reader.pos]) {
       visited[reader.pos] = true;
+      auto info = getInfo(&reader, bc);
 
-      auto opcode = reader.data[reader.pos];
-      auto begin = reader.pos;
-
-      auto readOn = [&]() {
-        auto saved = reader.pos;
-        reader.pos = begin + 1;
-        auto target = reader_i32(&reader);
-        reader.pos = saved;
-        return target;
-      };
-
-      static uint8_t dummy[1];
-      static std::FILE* f = fmemopen(dummy, sizeof(dummy), "w");
-      disassemble(f, &reader, bc);
-
-      switch (opcode) {
-        case OP_JMP: {
-          auto target = readOn();
-          isSep[reader.pos] = true;
-          isSep[target] = true;
-          if (!visited[target]) entries.push(target);
-          goto end;
-        }
-
-        case OP_CJMP_NZ:
-        case OP_CJMP_Z: {
-          auto target = readOn();
-          isSep[reader.pos] = true;
-          isSep[target] = true;
-          if (!visited[target]) entries.push(target);
-          break;
-        }
-
-        case OP_CALL: {
-          auto target = readOn();
-          if (target >= 0) {
-            isSep[reader.pos] = true;
-            isSep[target] = true;
-          }
-          if (target >= 0 && !visited[target]) entries.push(target);
-          break;
-        }
-
-        case OP_CALLC: {
-          isSep[reader.pos] = true;
-          break;
-        }
-
-        case OP_CLOSURE: {
-          auto target = readOn();
-          isSep[target] = true;
-          if (target >= 0 && !visited[target]) entries.push(target);
-          break;
-        }
-
-        case OP_EOF:
-        case OP_FAIL:
-        case OP_END:
-          goto end;
-
-        default:
-          break;
+      if (info.hasTarget && info.target >= 0) {
+        if (!visited[info.target]) entries.push_back(info.target);
+        if (info.addsEntryPoint) isSep[info.target] = true;
       }
+
+      if (info.breaksFlow) isSep[reader.pos] = true;
+      if (info.isEof) break;
     }
-  end:
   }
 
   return {visited, isSep};
 }
 
-std::vector<Instruction> BytecodeAnalyzer::collectInsns(
-    const std::vector<bool>& visited) {
-  byte_reader reader{};
-  reader_init(&reader, bc->code, bc->code_size);
-
-  std::vector<Instruction> insns;
-
-  static uint8_t dummy[1];
-  static std::FILE* f = fmemopen(dummy, sizeof(dummy), "w");
-
-  while (reader.pos < reader.size) {
-    if (visited[reader.pos]) {
-      auto begin = reader.pos;
-      disassemble(f, &reader, bc);
-      insns.push_back(
-          {std::string_view(reinterpret_cast<const char*>(reader.data + begin),
-                            reader.pos - begin),
-           begin});
-    } else
-      reader_u8(&reader);
-  }
-
-  return insns;
-}
-
-template <typename T>
-std::vector<std::pair<T, std::size_t>> count(std::vector<T>& els) {
-  std::ranges::sort(els);
-  std::vector<std::pair<T, std::size_t>> result;
-
-  if (els.empty()) return {};
-
-  auto landmark = std::move(els[0]);
-  std::size_t curr = 1;
-  for (auto&& el : els | std::views::drop(1))
-    if (el == landmark)
-      curr++;
-    else {
-      result.push_back({std::move(landmark), curr});
-      landmark = el;
-      curr = 1;
-    }
-  result.push_back({std::move(landmark), curr});
-
-  std::ranges::sort(result, std::ranges::greater{},
-                    &std::pair<T, std::size_t>::second);
-  return result;
-}
-
-Report BytecodeAnalyzer::countFrequencies() {
+void BytecodeAnalyzer::printStatistics() {
   auto [visited, isSep] = reachability();
-  auto insns = collectInsns(visited);
-  std::vector<std::pair<Instruction, Instruction>> pairs;
 
-  if (!insns.empty()) {
-    for (std::size_t i = 1; i < insns.size(); i++) {
-      auto prev = insns[i - 1];
-      auto curr = insns[i];
-      if (!isSep[insns[i].offset]) pairs.push_back({prev, curr});
-    }
-  }
-
-  return Report{count(insns), count(pairs)};
-}
-
-std::string BytecodeAnalyzer::reportToString(const Report& report) {
   std::stringstream buffer;
   char* insnBuffer = nullptr;
   size_t size = 0;
@@ -193,22 +96,90 @@ std::string BytecodeAnalyzer::reportToString(const Report& report) {
     return std::string_view(insnBuffer, size);
   };
 
+  auto single = countSingleFrequencies(visited);
   buffer << "SINGLE INSTRUCTION:\n";
-
-  for (const auto& [insn, freq] : report.single) {
+  for (auto&& [insn, freq] : single) {
     buffer << readInsn(insn.offset, ':') << " " << freq << "\n";
   }
+  std::println("{}", buffer.str());
+  buffer.str("");
 
+  auto pairs = countPairFrequencies(std::move(visited), std::move(isSep));
   buffer << "\nINSTRUCTIONS IN PAIRS:\n";
-
-  for (const auto& [insns, freq] : report.pair) {
-    const auto& [insn1, insn2] = insns;
-    buffer << readInsn(insn1.offset, ',');
-    buffer << readInsn(insn2.offset, ':') << " " << freq << "\n";
+  for (auto&& [pair, freq] : pairs) {
+    buffer << readInsn(pair.offset, ',') << " ";
+    buffer << readInsn(reader.pos, ':') << " " << freq << "\n";
   }
 
   std::fclose(f);
   std::free(insnBuffer);
 
-  return buffer.str();
+  std::println("{}", buffer.str());
+}
+
+template <typename T>
+std::vector<std::pair<T, std::uint32_t>> count(std::vector<T>&& insns,
+                                               const bytecode* bc) {
+  if (insns.empty()) return {};
+  std::vector<std::pair<T, std::uint32_t>> result;
+
+  BytecodeView view(bc);
+  std::ranges::sort(insns, BytecodeLess{view});
+
+  auto landmark = std::move(insns[0]);
+  std::size_t curr = 1;
+  for (auto&& el : insns | std::views::drop(1))
+    if (view.bytes(el) == view.bytes(landmark))
+      curr++;
+    else {
+      result.push_back({std::move(landmark), curr});
+      landmark = el;
+      curr = 1;
+    }
+  result.push_back({std::move(landmark), curr});
+
+  std::ranges::sort(result, std::ranges::greater{},
+                    &std::pair<T, std::uint32_t>::second);
+  return result;
+}
+
+SingleFrequencies BytecodeAnalyzer::countSingleFrequencies(
+    const std::vector<bool>& visited) {
+  if (visited.empty()) return {};
+
+  std::vector<Instruction> insns;
+  for (std::uint32_t i = 0; i < visited.size(); i++)
+    if (visited[i]) insns.push_back(Instruction{i});
+
+  return count(std::move(insns), bc);
+}
+
+PairFrequencies BytecodeAnalyzer::countPairFrequencies(
+    std::vector<bool>&& visited, std::vector<bool>&& isSep) {
+  if (visited.empty()) return {};
+
+  BytecodeView view(bc);
+  std::vector<InstructionPair> insns;
+
+  std::uint32_t prev = 0;
+  while (prev < visited.size() && !visited[prev]) prev++;
+  if (prev == visited.size()) return {};
+
+  bool hasPrev = true;
+  std::uint32_t i = prev + view.insnLen(prev);
+
+  while (i < visited.size()) {
+    if (visited[i]) {
+      if (!isSep[i] && hasPrev) insns.push_back(InstructionPair{prev});
+
+      prev = i;
+      hasPrev = true;
+      i += view.insnLen(i);
+    } else {
+      hasPrev = false;
+      i++;
+    }
+  }
+
+  return count(std::move(insns), bc);
 }

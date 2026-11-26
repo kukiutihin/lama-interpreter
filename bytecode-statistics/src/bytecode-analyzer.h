@@ -1,43 +1,77 @@
 #pragma once
 
 #include <cstddef>
-#include <string_view>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
+#include "disassemble.h"
+
 extern "C" {
 #include "bytecode.h"
+
+extern _Noreturn void failure(char* s, ...);
 }
 
 struct Instruction {
-  std::string_view bytes;
-  std::size_t offset;
+  std::uint32_t offset;
+};
 
-  auto operator<=>(const Instruction& other) const {
-    return bytes <=> other.bytes;
+struct InstructionPair {
+  std::uint32_t offset;
+};
+
+using SingleFrequencies = std::vector<std::pair<Instruction, std::uint32_t>>;
+using PairFrequencies = std::vector<std::pair<InstructionPair, std::uint32_t>>;
+
+class BytecodeView {
+  const bytecode* bc;
+
+ public:
+  BytecodeView(const bytecode* bc) : bc(bc) {}
+  std::uint32_t insnLen(std::uint32_t offset) const noexcept {
+    static uint8_t dummy[1];
+    static std::FILE* f = fmemopen(dummy, sizeof(dummy), "w");
+
+    byte_reader reader{bc->code, bc->code_size, offset};
+    return disassemble(f, &reader, bc);
   }
 
-  auto operator==(const Instruction& other) const {
-    return bytes == other.bytes;
+  std::string_view bytes(Instruction insn) const noexcept {
+    const auto* p = bc->code + insn.offset;
+    return {reinterpret_cast<const char*>(p), insnLen(insn.offset)};
+  }
+
+  std::string_view bytes(InstructionPair pair) const noexcept {
+    const auto* p = bc->code + pair.offset;
+    std::size_t l1 = insnLen(pair.offset);
+    std::size_t l2 = insnLen(pair.offset + static_cast<std::uint32_t>(l1));
+    return {reinterpret_cast<const char*>(p), l1 + l2};
   }
 };
 
-using SingleWithFrequency = std::pair<Instruction, std::size_t>;
-using PairWithFrequency =
-    std::pair<std::pair<Instruction, Instruction>, std::size_t>;
+struct BytecodeLess {
+  BytecodeView view;
 
-struct Report {
-  std::vector<SingleWithFrequency> single;
-  std::vector<PairWithFrequency> pair;
+  template <typename T>
+  bool operator()(T a, T b) {
+    return view.bytes(a) < view.bytes(b);
+  }
 };
 
 class BytecodeAnalyzer {
   const bytecode* bc;
 
+  std::vector<uint32_t> preparePublics(std::vector<bool>& isSep);
+
  public:
   BytecodeAnalyzer(const bytecode* bc) : bc(bc) {}
+
   std::pair<std::vector<bool>, std::vector<bool>> reachability();
-  std::vector<Instruction> collectInsns(const std::vector<bool>& visited);
-  Report countFrequencies();
-  std::string reportToString(const Report&);
+
+  SingleFrequencies countSingleFrequencies(const std::vector<bool>& visited);
+  PairFrequencies countPairFrequencies(std::vector<bool>&& visited,
+                                       std::vector<bool>&& isSep);
+
+  void printStatistics();
 };

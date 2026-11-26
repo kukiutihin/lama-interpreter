@@ -7,6 +7,7 @@ target_include_directories(lamastat-core
 )
 
 target_link_libraries(lamastat-core PUBLIC
+  runtime
   include
 )
 
@@ -15,7 +16,7 @@ add_executable(lamastat
 )
 
 target_compile_options(lamastat PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:-Wno-writable-strings>
+  $<$<COMPILE_LANGUAGE:C, CXX>:-Wno-writable-strings>
 )
 
 target_link_libraries(lamastat PRIVATE 

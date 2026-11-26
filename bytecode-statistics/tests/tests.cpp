@@ -1,7 +1,8 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <cstring>
-#include <string_view>
+#include <optional>
 #include <vector>
 
 #include "bytecode-analyzer.h"
@@ -83,6 +84,31 @@ bytecode makeBytecode(const std::vector<uint8_t>& code,
   return bc;
 }
 
+std::optional<std::uint32_t> findFreqForOpcode(
+    const SingleFrequencies& freqs, const std::vector<std::uint8_t>& code,
+    std::uint8_t expectedOpcode) {
+  for (const auto& [instr, count] : freqs) {
+    if (code[instr.offset] == expectedOpcode) {
+      return count;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::uint32_t> findFreqForInsn(
+    const SingleFrequencies& freqs, const std::vector<std::uint8_t>& code,
+    std::size_t targetOffset, std::size_t byteLen) {
+  for (const auto& [instr, count] : freqs) {
+    if (instr.offset + byteLen <= code.size() &&
+        std::equal(code.begin() + instr.offset,
+                   code.begin() + instr.offset + byteLen,
+                   code.begin() + targetOffset)) {
+      return count;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 TEST_CASE("reachability: linear code stops at END and ignores dead code") {
@@ -97,6 +123,7 @@ TEST_CASE("reachability: linear code stops at END and ignores dead code") {
   BytecodeAnalyzer analyzer(&bc);
   auto [visited, isSep] = analyzer.reachability();
 
+  REQUIRE(std::ranges::count(visited, true) == 3);
   REQUIRE(visited[o0]);
   REQUIRE(visited[o1]);
   REQUIRE(visited[o2]);
@@ -118,20 +145,20 @@ TEST_CASE("reachability: JMP skips dead code and marks separator") {
   BytecodeAnalyzer analyzer(&bc);
   auto [visited, isSep] = analyzer.reachability();
 
+  REQUIRE(std::ranges::count(visited, true) == 3);
   REQUIRE(visited[jmpOff]);
   REQUIRE_FALSE(visited[deadOff]);
   REQUIRE(visited[targetOff]);
   REQUIRE(visited[endOff]);
-
   REQUIRE(isSep[targetOff]);
 }
 
 TEST_CASE("reachability: CJMP_Z visits both fall-through and target") {
   CodeBuilder cb;
-  // 0: CJMP_Z 7
+  // 0: CJMP_Z 8
   // 5: DUP
   // 6: END
-  // 7: DUP
+  // 7: DUP (dead)
   // 8: DROP
   // 9: END
   auto cjmpOff = cb.emitCjmpZ(8);
@@ -146,14 +173,13 @@ TEST_CASE("reachability: CJMP_Z visits both fall-through and target") {
   BytecodeAnalyzer analyzer(&bc);
   auto [visited, isSep] = analyzer.reachability();
 
+  REQUIRE(std::ranges::count(visited, true) == 5);
   REQUIRE(visited[cjmpOff]);
   REQUIRE(visited[fallOff]);
   REQUIRE(visited[end1Off]);
   REQUIRE_FALSE(visited[deadOff]);
   REQUIRE(visited[targetOff]);
   REQUIRE(visited[end2Off]);
-
-  REQUIRE(isSep[fallOff]);
   REQUIRE(isSep[targetOff]);
 }
 
@@ -175,12 +201,12 @@ TEST_CASE("reachability: CALL visits callee and continues after call") {
   BytecodeAnalyzer analyzer(&bc);
   auto [visited, isSep] = analyzer.reachability();
 
+  REQUIRE(std::ranges::count(visited, true) == 5);
   REQUIRE(visited[callOff]);
   REQUIRE(visited[afterCall]);
   REQUIRE(visited[mainEnd]);
   REQUIRE(visited[calleeOff]);
   REQUIRE(visited[calleeEnd]);
-
   REQUIRE(isSep[calleeOff]);
   REQUIRE(isSep[afterCall]);
 }
@@ -209,6 +235,7 @@ TEST_CASE("reachability: CLOSURE visits closure body and skips dead code") {
   BytecodeAnalyzer analyzer(&bc);
   auto [visited, isSep] = analyzer.reachability();
 
+  REQUIRE(std::ranges::count(visited, true) == 5);
   REQUIRE(visited[closureOff]);
   REQUIRE(visited[afterClosure]);
   REQUIRE(visited[mainEnd]);
@@ -218,86 +245,180 @@ TEST_CASE("reachability: CLOSURE visits closure body and skips dead code") {
   REQUIRE(isSep[bodyOff]);
 }
 
-TEST_CASE("collectInsns") {
+TEST_CASE("countSingleFrequencies: finds same zero-operand opcodes") {
   CodeBuilder cb;
-  auto o0 = cb.emitConst(42);   // 5 bytes
-  auto o1 = cb.emitOp(OP_DUP);  // 1 byte
-  auto o2 = cb.emitOp(OP_END);  // 1 byte
-  auto dead = cb.emitOp(OP_DROP);
+  auto o0 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o1 = static_cast<std::uint32_t>(cb.emitOp(OP_DROP));
+  auto o2 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o3 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o4 = static_cast<std::uint32_t>(cb.emitOp(OP_END));
   cb.emitOp(OP_EOF);
 
   auto bc = makeBytecode(cb.buf);
   BytecodeAnalyzer analyzer(&bc);
-  auto [visited, _] = analyzer.reachability();
-  auto insns = analyzer.collectInsns(visited);
 
-  REQUIRE(insns.size() == 3);
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[o0] = visited[o1] = visited[o2] = visited[o3] = visited[o4] = true;
+  auto freqs = analyzer.countSingleFrequencies(visited);
 
-  REQUIRE(insns[0].offset == o0);
-  REQUIRE(insns[0].bytes.size() == 5);
-  REQUIRE(static_cast<uint8_t>(insns[0].bytes[0]) == OP_CONST);
+  REQUIRE(freqs.size() == 3);
+  REQUIRE(findFreqForOpcode(freqs, cb.buf, OP_DUP) == 3);
+  REQUIRE(findFreqForOpcode(freqs, cb.buf, OP_DROP) == 1);
+  REQUIRE(findFreqForOpcode(freqs, cb.buf, OP_END) == 1);
 
-  REQUIRE(insns[1].offset == o1);
-  REQUIRE(insns[1].bytes.size() == 1);
-  REQUIRE(static_cast<uint8_t>(insns[1].bytes[0]) == OP_DUP);
-
-  REQUIRE(insns[2].offset == o2);
-  REQUIRE(insns[2].bytes.size() == 1);
-  REQUIRE(static_cast<uint8_t>(insns[2].bytes[0]) == OP_END);
-
-  (void)dead;
+  auto dupIt = std::ranges::find_if(
+      freqs, [&](const auto& p) { return cb.buf[p.first.offset] == OP_DUP; });
+  REQUIRE(dupIt != freqs.end());
+  REQUIRE((dupIt->first.offset == o0 || dupIt->first.offset == o2 ||
+           dupIt->first.offset == o3));
 }
 
-TEST_CASE("countFrequencies: single") {
+TEST_CASE(
+    "countSingleFrequencies: same opcode with different operands is another "
+    "instruction") {
   CodeBuilder cb;
-  // 3x DUP, 2x DROP, 1x CONST 7, 1x END
-  cb.emitOp(OP_DUP);
-  cb.emitOp(OP_DUP);
-  cb.emitOp(OP_DUP);
-  cb.emitOp(OP_DROP);
-  cb.emitOp(OP_DROP);
-  cb.emitConst(7);
-  cb.emitOp(OP_END);
+  auto c42_a = static_cast<std::uint32_t>(cb.emitConst(42));  // 5 bytes
+  auto c99 = static_cast<std::uint32_t>(cb.emitConst(99));    // 5 bytes
+  auto c42_b = static_cast<std::uint32_t>(cb.emitConst(42));  // 5 bytes
+  auto endOff = static_cast<std::uint32_t>(cb.emitOp(OP_END));
   cb.emitOp(OP_EOF);
 
   auto bc = makeBytecode(cb.buf);
   BytecodeAnalyzer analyzer(&bc);
-  auto report = analyzer.countFrequencies();
 
-  REQUIRE(report.single.size() == 4);
-  REQUIRE(static_cast<uint8_t>(report.single[0].first.bytes[0]) == OP_DUP);
-  REQUIRE(report.single[0].second == 3);
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[c42_a] = visited[c99] = visited[c42_b] = visited[endOff] = true;
+  auto freqs = analyzer.countSingleFrequencies(visited);
 
-  REQUIRE(static_cast<uint8_t>(report.single[1].first.bytes[0]) == OP_DROP);
-  REQUIRE(report.single[1].second == 2);
+  REQUIRE(freqs.size() == 3);
+  REQUIRE(findFreqForInsn(freqs, cb.buf, c42_a, 5) == 2);
+  REQUIRE(findFreqForInsn(freqs, cb.buf, c99, 5) == 1);
+  REQUIRE(findFreqForInsn(freqs, cb.buf, endOff, 1) == 1);
 }
 
-TEST_CASE("countFrequencies: pairs do not cross basic block boundaries") {
-  CodeBuilder cb;
-  // block 1: DUP, DROP, JMP 8
-  // block 2 (offset 8): DUP, DROP, END
-  cb.emitOp(OP_DUP);
-  cb.emitOp(OP_DROP);
-  cb.emitJmp(7);  
-  cb.emitOp(OP_DUP);
-  cb.emitOp(OP_DROP);
-  cb.emitOp(OP_END);
-  cb.emitOp(OP_EOF);
-
-  auto bc = makeBytecode(cb.buf);
-  BytecodeAnalyzer analyzer(&bc);
-  auto report = analyzer.countFrequencies();
-
-  // (DUP, DROP) appears twice; (JMP, DUP) must not appear because offset 7 is a
-  // separator
-  REQUIRE_FALSE(report.pair.empty());
-  REQUIRE(static_cast<uint8_t>(report.pair[0].first.first.bytes[0]) == OP_DUP);
-  REQUIRE(static_cast<uint8_t>(report.pair[0].first.second.bytes[0]) ==
-          OP_DROP);
-  REQUIRE(report.pair[0].second == 2);
-
-  for (const auto& [p, _] : report.pair) {
-    REQUIRE_FALSE((static_cast<uint8_t>(p.first.bytes[0]) == OP_JMP &&
-                   static_cast<uint8_t>(p.second.bytes[0]) == OP_DUP));
+std::optional<std::uint32_t> findFreqForPair(
+    const PairFrequencies& freqs, const std::vector<std::uint8_t>& code,
+    std::size_t targetOffset, std::size_t totalByteLen) {
+  for (const auto& [pair, count] : freqs) {
+    if (pair.offset + totalByteLen <= code.size() &&
+        std::equal(code.begin() + pair.offset,
+                   code.begin() + pair.offset + totalByteLen,
+                   code.begin() + targetOffset)) {
+      return count;
+    }
   }
+  return std::nullopt;
+}
+
+TEST_CASE("countPairFrequencies") {
+  CodeBuilder cb;
+  //  DUP, DROP, DUP, DROP, DUP, END
+  //   (DUP, DROP) x2  
+  //   (DROP, DUP) x2  
+  //   (DUP, END)  x1  
+  auto o0 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o1 = static_cast<std::uint32_t>(cb.emitOp(OP_DROP));
+  auto o2 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o3 = static_cast<std::uint32_t>(cb.emitOp(OP_DROP));
+  auto o4 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o5 = static_cast<std::uint32_t>(cb.emitOp(OP_END));
+  cb.emitOp(OP_EOF);
+
+  auto bc = makeBytecode(cb.buf);
+  BytecodeAnalyzer analyzer(&bc);
+
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[o0] = visited[o1] = visited[o2] = visited[o3] = visited[o4] =
+      visited[o5] = true;
+  std::vector<bool> isSep(cb.buf.size(), false);
+
+  auto freqs = analyzer.countPairFrequencies(std::move(visited), std::move(isSep));
+
+  REQUIRE(freqs.size() == 3);
+  REQUIRE(findFreqForPair(freqs, cb.buf, o0, 2) == 2);  // DUP, DROP
+  REQUIRE(findFreqForPair(freqs, cb.buf, o1, 2) == 2);  // DROP, DUP
+  REQUIRE(findFreqForPair(freqs, cb.buf, o4, 2) == 1);  // DUP, END
+  REQUIRE(freqs.back().second == 1);
+}
+
+TEST_CASE("countPairFrequencies: distinguishes multi-byte instructions by operands") {
+  CodeBuilder cb;
+  // (CONST 10, DUP) x2, (CONST 20, DUP) x1
+  auto c10_a = static_cast<std::uint32_t>(cb.emitConst(10));
+  auto dup1 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto c20 = static_cast<std::uint32_t>(cb.emitConst(20)); 
+  auto dup2 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto c10_b = static_cast<std::uint32_t>(cb.emitConst(10));
+  auto dup3 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto endOff = static_cast<std::uint32_t>(cb.emitOp(OP_END));
+  cb.emitOp(OP_EOF);
+
+  auto bc = makeBytecode(cb.buf);
+  BytecodeAnalyzer analyzer(&bc);
+
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[c10_a] = visited[dup1] = visited[c20] = visited[dup2] =
+      visited[c10_b] = visited[dup3] = visited[endOff] = true;
+
+  auto freqs = analyzer.countPairFrequencies(
+      std::move(visited), std::vector<bool>(cb.buf.size(), false));
+
+  REQUIRE(findFreqForPair(freqs, cb.buf, c10_a, 6) == 2);
+  REQUIRE(findFreqForPair(freqs, cb.buf, c20, 6) == 1);
+  REQUIRE(findFreqForPair(freqs, cb.buf, dup3, 2) == 1);  // DUP, END
+}
+
+TEST_CASE("countPairFrequencies: isSep on second element prevents forming a pair") {
+  CodeBuilder cb;
+  // 0: DUP
+  // 1: DROP  <-- isSep[1] = true
+  // 2: SWAP
+  // 3: END
+  auto o0 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  auto o1 = static_cast<std::uint32_t>(cb.emitOp(OP_DROP));
+  auto o2 = static_cast<std::uint32_t>(cb.emitOp(OP_SWAP));
+  auto o3 = static_cast<std::uint32_t>(cb.emitOp(OP_END));
+  cb.emitOp(OP_EOF);
+
+  auto bc = makeBytecode(cb.buf);
+  BytecodeAnalyzer analyzer(&bc);
+
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[o0] = visited[o1] = visited[o2] = visited[o3] = true;
+
+  std::vector<bool> isSep(cb.buf.size(), false);
+  isSep[o1] = true;
+
+  auto freqs = analyzer.countPairFrequencies(std::move(visited), std::move(isSep));
+
+  REQUIRE(freqs.size() == 2);
+  REQUIRE(findFreqForPair(freqs, cb.buf, o0, 2) == std::nullopt);  // DUP, DROP
+  REQUIRE(findFreqForPair(freqs, cb.buf, o1, 2) == 1);             // DROP, SWAP
+  REQUIRE(findFreqForPair(freqs, cb.buf, o2, 2) == 1);             // SWAP, END
+}
+
+TEST_CASE("countPairFrequencies: unvisited gap breaks adjacency") {
+  CodeBuilder cb;
+  // 0: DUP   
+  // 1: SWAP  (dead)
+  // 2: DROP  
+  // 3: END   
+  auto o0 = static_cast<std::uint32_t>(cb.emitOp(OP_DUP));
+  cb.emitOp(OP_SWAP);
+  auto o2 = static_cast<std::uint32_t>(cb.emitOp(OP_DROP));
+  auto o3 = static_cast<std::uint32_t>(cb.emitOp(OP_END));
+  cb.emitOp(OP_EOF);
+
+  auto bc = makeBytecode(cb.buf);
+  BytecodeAnalyzer analyzer(&bc);
+
+  std::vector<bool> visited(cb.buf.size(), false);
+  visited[o0] = visited[o2] = visited[o3] = true;
+
+  auto freqs = analyzer.countPairFrequencies(
+      std::move(visited), std::vector<bool>(cb.buf.size(), false));
+
+  // Only (DROP, END) is adjacent and visited
+  REQUIRE(freqs.size() == 1);
+  REQUIRE(findFreqForPair(freqs, cb.buf, o2, 2) == 1);
 }

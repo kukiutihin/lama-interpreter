@@ -1,9 +1,12 @@
+#pragma once
+
 #include <stdio.h>
 
 extern "C" {
 #include "bytecode.h"
 #include "opcodes.h"
 #include "reader.h"
+#include "runtime.h"
 }
 
 static void print_escaped_string(FILE* f, const char* s) {
@@ -45,9 +48,8 @@ static void print_escaped_string(FILE* f, const char* s) {
 inline static size_t disassemble(FILE* f, byte_reader* reader,
                                  const bytecode* bc) {
   size_t offset = reader_pos(reader);
-  uint8_t x = reader_u8(reader);
-
   size_t start = reader->pos;
+  uint8_t x = reader_u8(reader);
 
   fprintf(f, "0x%.8x:\t", (unsigned int)offset);
 
@@ -182,4 +184,82 @@ inline static size_t disassemble(FILE* f, byte_reader* reader,
 
   fprintf(f, "\n");
   return reader->pos - start;
+}
+
+typedef struct {
+  int32_t target;
+  bool hasTarget;
+  bool breaksFlow;
+  bool addsEntryPoint;
+  bool isEof;
+} InsnInfo;
+
+static inline int32_t readOn(byte_reader* reader, size_t begin) {
+  size_t saved = reader->pos;
+  reader->pos = begin + 1;
+  int32_t target = reader_i32(reader);
+  if (target >= (int)reader->size)
+    failure("Incorrect jump JMP/CALL target: %d, code size: %d (%d)", target,
+            reader->size, begin);
+
+  reader->pos = saved;
+  return target;
+}
+
+static inline InsnInfo getInfo(byte_reader* reader, const bytecode* bc) {
+  size_t opcode = reader->data[reader->pos];
+  size_t begin = reader->pos;
+
+  static uint8_t dummy[1];
+  static FILE* f = fmemopen(dummy, sizeof(dummy), "w");
+  disassemble(f, reader, bc);
+
+  InsnInfo info{};
+
+  switch (opcode) {
+    case OP_JMP: {
+      info.target = readOn(reader, begin);
+      info.hasTarget = true;
+      info.breaksFlow = true;
+      info.addsEntryPoint = true;
+      info.isEof = true;
+      break;
+    }
+
+    case OP_CJMP_NZ:
+    case OP_CJMP_Z: {
+      info.target = readOn(reader, begin);
+      info.hasTarget = true;
+      info.addsEntryPoint = true;
+      break;
+    }
+
+    case OP_CALL: {
+      info.target = readOn(reader, begin);
+      info.hasTarget = true;
+      info.breaksFlow = true;
+      info.addsEntryPoint = true;
+      break;
+    }
+
+    case OP_CALLC:
+      info.breaksFlow = true;
+      break;
+
+    case OP_CLOSURE: {
+      info.target = readOn(reader, begin);
+      info.hasTarget = true;
+      info.addsEntryPoint = true;
+      break;
+    }
+
+    case OP_EOF:
+    case OP_FAIL:
+    case OP_END:
+      info.isEof = true;
+
+    default:
+      break;
+  }
+  return info;
 }

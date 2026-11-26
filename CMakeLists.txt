@@ -47,6 +47,9 @@ add_library(include INTERFACE)
 target_include_directories(include INTERFACE
   ${INCLUDE_DIR}
 )
+target_compile_options(include INTERFACE
+  $<$<COMPILE_LANGUAGE:C, CXX>:-Wno-writable-strings>
+)
 target_link_libraries(include
   INTERFACE vm
 )
