@@ -6,6 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(CTest)
+include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.8.1 
+)
+FetchContent_MakeAvailable(Catch2)
+
 set(RUNTIME_DIR ${CMAKE_SOURCE_DIR}/Lama/runtime)
 add_library(runtime STATIC
   ${RUNTIME_DIR}/runtime.c 
@@ -22,10 +32,23 @@ target_include_directories(runtime PUBLIC
     ${RUNTIME_DIR}
 )
 
+set(VM_DIR ${CMAKE_SOURCE_DIR}/Lama/virtual_machine)
+add_library(vm STATIC
+  ${VM_DIR}/bytecode.c
+  ${VM_DIR}/memory.c
+  ${VM_DIR}/opcodes.c
+)
+target_include_directories(vm PUBLIC
+  ${VM_DIR}
+)
+
 set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 add_library(include INTERFACE)
 target_include_directories(include INTERFACE
   ${INCLUDE_DIR}
+)
+target_link_libraries(include
+  INTERFACE vm
 )
 
 add_subdirectory(interpreter)

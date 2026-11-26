@@ -4,10 +4,12 @@
 !*/
 
 !Makefile
-/tests
+
+tests
+.vscode
 build
-/perf
-/Lama
+perf
+Lama
 
 *.out 
 *.so

@@ -28,11 +28,12 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           cmake --build build --target lamastat -j$(nproc)
 
+      - name: Build tests and run
+        run: |
+          cmake --build build --target lamastat-tests -j$(nproc)
+          ctest --test-dir build --output-on-failure
+
       - name: Run lamastat on Sort.bc
         run: |
           ./build/bytecode-statistics/lamastat example/Sort.bc
 
-      - name: Run DCE correctness script
-        run: |
-          chmod +x bytecode-statistics/dceCorrectness.sh
-          ./bytecode-statistics/dceCorrectness.sh

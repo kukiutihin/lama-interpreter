@@ -1,6 +1,17 @@
+add_library(lamastat-core STATIC
+  src/bytecode-analyzer.cpp
+)
+
+target_include_directories(lamastat-core
+  PUBLIC src
+)
+
+target_link_libraries(lamastat-core PUBLIC
+  include
+)
+
 add_executable(lamastat
   src/main.cpp
-  src/bytecode-analyzer.cpp
 )
 
 target_compile_options(lamastat PRIVATE
@@ -8,6 +19,10 @@ target_compile_options(lamastat PRIVATE
 )
 
 target_link_libraries(lamastat PRIVATE 
-  runtime
-  include
+  lamastat-core 
 )
+
+if(BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

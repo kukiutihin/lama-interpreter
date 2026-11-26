@@ -1,36 +1,43 @@
 #pragma once
 
-#include <cstdint>
-#include <unordered_map>
+#include <cstddef>
+#include <string_view>
 #include <utility>
+#include <vector>
 
-#include "bool-pair-vec.h"
-#include "bytecode-loader.h"
+extern "C" {
+#include "bytecode.h"
+}
 
-using PairFrequences = std::unordered_map<std::uint16_t, std::size_t>;
-using SingleFrequences = std::unordered_map<std::uint8_t, std::size_t>;
+struct Instruction {
+  std::string_view bytes;
+  std::size_t offset;
+
+  auto operator<=>(const Instruction& other) const {
+    return bytes <=> other.bytes;
+  }
+
+  auto operator==(const Instruction& other) const {
+    return bytes == other.bytes;
+  }
+};
+
+using SingleWithFrequency = std::pair<Instruction, std::size_t>;
+using PairWithFrequency =
+    std::pair<std::pair<Instruction, Instruction>, std::size_t>;
 
 struct Report {
-  PairFrequences pairFrequences;
-  SingleFrequences singleFrequences;
+  std::vector<SingleWithFrequency> single;
+  std::vector<PairWithFrequency> pair;
 };
 
 class BytecodeAnalyzer {
-  Bytecode bytecode;
-
-  BoolPairVec reachability();
+  const bytecode* bc;
 
  public:
-  BytecodeAnalyzer(const Bytecode& bc) : bytecode(bc) {}
-  Report collectStatistics();
-
-  [[gnu::always_inline]] static std::uint16_t pack(std::uint8_t higher,
-                                                   std::uint8_t lower) {
-    return (std::uint16_t)0 | (higher << 8) | lower;
-  }
-
-  [[gnu::always_inline]] static std::pair<std::uint8_t, std::uint8_t> unpack(
-      std::uint16_t value) {
-    return std::pair{value >> 8, value & (std::uint8_t)255};
-  }
+  BytecodeAnalyzer(const bytecode* bc) : bc(bc) {}
+  std::pair<std::vector<bool>, std::vector<bool>> reachability();
+  std::vector<Instruction> collectInsns(const std::vector<bool>& visited);
+  Report countFrequencies();
+  std::string reportToString(const Report&);
 };
